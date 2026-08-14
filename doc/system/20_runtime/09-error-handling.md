@@ -95,9 +95,14 @@ stops at stderr.
 Tarcie does not fail loudly to the user. Capture must feel instant and invisible. Errors are logged internally but the overlay never shows error dialogs or failure states. If a capture fails, the 5-second revert constraint ensures the user is not blocked.
 
 `effectFor` in `src/capture.ts` holds that line. Only a confirmed capture
-flashes, hides the overlay, and clears the box. A refusal and a timeout change
-nothing on screen: the overlay stays open, holding the text, and says nothing
-about what happened. The window that did not go away is the whole signal.
+flashes and hides the overlay. A refusal and a timeout change nothing on
+screen: the overlay stays open, holding the text, and says nothing about what
+happened. The window that did not go away is the whole signal.
 
 The text on screen is also the only copy anyone can point to when a capture is
 unproven, which is the second reason an unconfirmed capture never clears it.
+
+Clearing the box belongs to the note capture alone. `effectFor` takes the
+`CaptureKind` for that reason. A marker is a separate gesture that happens to
+share the overlay, and it used to take the box with it — so text typed and
+never captured was erased by a click that had nothing to do with it.

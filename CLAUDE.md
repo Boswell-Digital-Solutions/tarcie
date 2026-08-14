@@ -23,7 +23,7 @@ Canonical reference: `doc/system/` → `doc/TARSYSTEM.md` (`bash doc/system/BUIL
 
 ```bash
 npm install && npm run build      # creates dist/ — cargo needs it
-npm run check && npm test         # tsc --noEmit, then 19 frontend tests
+npm run check && npm test         # tsc --noEmit, then 22 frontend tests
 cd src-tauri && cargo test        # 85 Rust unit tests
 ```
 
@@ -38,10 +38,9 @@ installs the system libraries, builds the frontend, runs the tests, and rebuilds
 the system document. It also fails if `doc/TARSYSTEM.md` is stale, so a change
 under `doc/system/` must ship with its rebuild.
 
-One `KNOWN DEVIATION` stands, in `src/overlay.test.ts`: a marker clears a note
-the user typed and never captured. If a test must record behavior that differs
-from the documented intent, mark it with a `KNOWN DEVIATION` comment that
-states the deviation. A fix must change that test in the same commit.
+No test currently pins a known deviation. If one must record behavior that
+differs from the documented intent, mark it with a `KNOWN DEVIATION` comment
+that states the deviation. A fix must change that test in the same commit.
 
 ```bash
 ./scripts/context-bundle.sh --list

@@ -11,6 +11,7 @@ import {
   STATUS_CAPTURED,
   effectFor,
   runCapture,
+  type CaptureKind,
 } from "./capture";
 
 /** How long the confirmation stays up before the overlay goes away. */
@@ -35,8 +36,8 @@ export interface OverlayPorts {
 export function wireOverlay(ports: OverlayPorts): void {
   const { input, marker, status, body, invoke, hide } = ports;
 
-  async function capture(send: () => Promise<unknown>) {
-    const effect = effectFor(await runCapture(send, CAPTURE_TIMEOUT_MS));
+  async function capture(kind: CaptureKind, send: () => Promise<unknown>) {
+    const effect = effectFor(await runCapture(send, CAPTURE_TIMEOUT_MS), kind);
 
     if (!effect.flash) {
       // Nothing confirmed the capture. The overlay stays exactly as it is,
@@ -65,14 +66,16 @@ export function wireOverlay(ports: OverlayPorts): void {
       // Read at the keystroke. What the capture carries is what was on screen
       // when the user asked for it.
       const content = input.value || "";
-      capture(() => invoke("capture_note", { content })).catch(console.error);
+      capture("note", () => invoke("capture_note", { content })).catch(
+        console.error,
+      );
     } else if (e.key === "Escape") {
       hide().catch(console.error);
     }
   });
 
   marker.addEventListener("click", () => {
-    capture(() => invoke("capture_marker", { reason: null })).catch(
+    capture("marker", () => invoke("capture_marker", { reason: null })).catch(
       console.error,
     );
   });
