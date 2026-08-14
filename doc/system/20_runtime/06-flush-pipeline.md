@@ -39,7 +39,22 @@ Each HTTP POST sends:
 
 - **Max retries:** 3 attempts per batch
 - **Backoff:** Exponential -- `2^retry` seconds (2s, 4s, 8s)
+- **Per request:** `SINK_REQUEST_TIMEOUT_SECS` (30s) bounds one POST
 - **On exhaustion:** Flush returns `Deferred` with reason. Events remain in the queue file untouched
+
+The per-request bound is what ends a wait on a sink that stops answering. A
+refused connection fails at once and reports itself. A sink that accepts the
+connection and then goes quiet holds a healthy connection open and reports
+nothing, and `reqwest` applies no time bound of its own.
+
+The bound matters because the background flusher is a single task. A flush that
+does not return takes every later flush with it, for the rest of the session.
+Captures still reach the queue, nothing leaves it, and the log stays silent,
+because a deferral is only logged once a flush ends.
+
+Four attempts and the backoff between them come to 134 seconds. That is inside
+the 300-second default flush interval, so a bounded flush finishes before the
+next one is due.
 
 ## FlushResult
 
@@ -62,6 +77,12 @@ queue keeping its promise rather than a fault, but it is also the only word
 anyone gets that captures are not arriving: tarcie has no readback surface, so
 an unreported deferral leaves a sink that has been refusing for days looking
 like a sink with nothing to do.
+
+The reason carries the whole cause chain. `anyhow` prints only the outermost
+context in its plain `Display`, and every failure inside `post_json` carries the
+context `POST to sink`. A refused connection, a timeout, and a name that does
+not resolve therefore reported the same four words, which name the attempt and
+never the cause. `MAX_LOG_LINE_CHARS` still bounds the line.
 
 `Empty` and `Success` are not logged. A flush that worked has nothing to say.
 

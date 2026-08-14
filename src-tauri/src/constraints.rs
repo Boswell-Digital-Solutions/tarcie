@@ -29,6 +29,16 @@ pub const HOTKEY_DEBOUNCE_MS: u64 = 500;
 // this much at most and never costs an event.
 pub const SHUTDOWN_FLUSH_SECS: u64 = 5;
 
+// How long one POST to the sink may take before it is given up on. reqwest
+// applies no bound of its own, so a sink that accepts the connection and then
+// says nothing holds the request open with nothing to report. The background
+// flusher is one task, so that single flush would end delivery for the rest of
+// the session, and the log would carry no word of it.
+//
+// Four attempts and the backoff between them stay inside the default flush
+// interval: 4 x 30s of waiting, plus 2s + 4s + 8s, is 134s against 300s.
+pub const SINK_REQUEST_TIMEOUT_SECS: u64 = 30;
+
 // The log is bounded. One previous file is kept, so the pair costs at most
 // twice this. A log that grows until the disk is gone would take the queue
 // with it, and the queue is the reliability contract.
