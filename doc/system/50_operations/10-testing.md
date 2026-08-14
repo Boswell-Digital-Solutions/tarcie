@@ -4,7 +4,7 @@
 
 Tarcie has a unit test suite. The tests live beside the code they cover, in
 `#[cfg(test)]` modules in `queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`,
-and `flusher.rs`.
+`flusher.rs`, and `util/device.rs`.
 
 The suite covers the seven priority areas:
 
@@ -17,6 +17,23 @@ The suite covers the seven priority areas:
 | Tag extraction | `ipc/commands.rs` | `#tag` becomes the context; absent tags fall back to the default |
 | Sink URL validation | `sink/config.rs` | A remote sink is refused unless the operator opts in |
 | FlushResult variants | `flusher.rs` | `Empty`, `Success`, and `Deferred` each occur, and a deferral keeps every event |
+
+The suite also covers two more areas:
+
+| Area | Module | Proves |
+|------|--------|--------|
+| The command layer | `ipc/commands.rs` | A capture passes through clamp, tag, build, and append, and the queue holds the event the user meant |
+| Device identity | `util/device.rs` | The ID is minted once, read back on every run after, and replaced when the file is damaged |
+
+Each command needs a Tauri `State`, which a test cannot supply. Each one
+therefore delegates to a function over a plain `&AppState` — `capture_note_into`,
+`capture_marker_into`, `flush_now_on` — and the test drives that function. The
+command itself adds only the state extraction.
+
+`load_or_create_device_id` resolves the identity file from the platform data
+dir. `load_or_create_device_id_at` takes the path directly, so a test writes to
+a temporary directory instead of the real user profile. `JsonlQueue::new_in`
+gives the queue the same seam.
 
 Every test asserts intended behavior. No test currently pins a known
 deviation.
@@ -92,18 +109,14 @@ cargo clippy -- -W clippy::all
 
 ## Not Yet Covered
 
-The seven priority areas are covered. These areas are not:
+These areas have no tests:
 
-1. **The Tauri command layer.** `capture_note`, `capture_marker`, and
-   `flush_now` need a Tauri `State`, so the tests cover the logic they call
-   instead of the commands themselves.
-2. **The mid-flush capture window at the flusher level.** The window itself is
+1. **The mid-flush capture window at the flusher level.** The window itself is
    covered in `queue::jsonl`, where an append can be placed between the claim
    and the completion. A flusher test cannot reach inside `flush_with_retry`
    to do that, so no end-to-end version exists.
-3. **A crash between a partial delivery and its archive.** The duplicate this
+2. **A crash between a partial delivery and its archive.** The duplicate this
    produces is documented, not tested; it needs process-level fault injection.
-4. **The global hotkey and window toggle.** These need a running desktop
+3. **The global hotkey, the window toggle, and the shutdown flush.** All three
+   run on the event loop of a real window, so they need a running desktop
    session.
-5. **Device ID persistence.** `load_or_create_device_id` writes to the real
-   user profile and has no path seam.
