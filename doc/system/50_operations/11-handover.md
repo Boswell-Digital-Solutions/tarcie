@@ -16,7 +16,17 @@ All modules implemented: IPC commands, JSONL queue, HTTP sink client, background
 
 ## Known Limitations
 
-- **No automated tests.** v1 shipped without a test suite. See section 10 for priority test areas.
+- **Test coverage is unit-level only.** The seven priority areas in section 10
+  have tests. The Tauri command layer, the hotkey, and device-ID persistence do
+  not. Section 10 lists what stays uncovered.
+- **A flush can file an unsent capture as sent.** The flusher reads the queue,
+  posts it, and then rotates the file. An append between the read and the
+  rotate goes to `queue.sent.*` without being transmitted.
+- **A multi-batch flush can send a batch twice.** If an early batch succeeds
+  and a later one fails, the flush defers without rotating, so the succeeded
+  batch is posted again on the next cycle.
+- **Rotation file names resolve to the second.** Two rotations within one
+  second overwrite each other.
 - **Monotonic clock resets on restart.** `timestamp_mono_ms` is relative to session start. Cross-session ordering relies on `timestamp_utc` only.
 - **Platform paths.** Uses the `directories` crate for queue file location. Windows IPC path edge cases have not been tested.
 - **No retry persistence.** If the application is killed during a flush, partial state depends on whether the queue rotation completed. The tolerant reader handles most corruption cases.
@@ -30,6 +40,9 @@ cd src-tauri && cargo build
 
 # Run in dev mode
 cd src-tauri && cargo tauri dev
+
+# Run the tests (needs dist/ — run `npm run build` first)
+cd src-tauri && cargo test
 
 # Check types
 cd src-tauri && cargo check
@@ -48,7 +61,8 @@ export TARCIE_BATCH_MAX=50
 | Item | Path |
 |------|------|
 | Rust source | `src-tauri/src/` |
-| Frontend | `src-tauri/frontend/` (main.ts, styles.css, index.html) |
+| Frontend | `src/` (main.ts, styles.css, index.html) |
+| Frontend bundle | `dist/` (built by `npm run build`; `cargo` needs it) |
 | Cargo manifest | `src-tauri/Cargo.toml` |
 | Tauri config | `src-tauri/tauri.conf.json` |
 | Queue files | Platform queue dir via `directories` crate |

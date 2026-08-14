@@ -107,3 +107,122 @@ pub async fn flush_now(state: State<'_, Arc<AppState>>) -> Result<String, String
         Err(e) => Err(e.to_string()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The suffix `clamp_bytes` appends when it shortens a string.
+    const MARKER: &str = " […truncated]";
+
+    // --- 4. Content clamping ---------------------------------------------
+
+    #[test]
+    fn content_within_the_limit_is_only_trimmed() {
+        assert_eq!(clamp_bytes("  hello  ".to_string(), 100), "hello");
+    }
+
+    #[test]
+    fn content_exactly_at_the_limit_is_left_alone() {
+        let exact = "a".repeat(100);
+        assert_eq!(clamp_bytes(exact.clone(), 100), exact);
+    }
+
+    #[test]
+    fn oversized_content_is_clamped_rather_than_rejected() {
+        let huge = "a".repeat(MAX_CONTENT_BYTES + 500);
+        let clamped = clamp_bytes(huge, MAX_CONTENT_BYTES);
+
+        assert!(clamped.starts_with("aaa"), "the leading content is kept");
+        assert!(clamped.ends_with(MARKER), "truncation is disclosed, not silent");
+        assert!(clamped.len() < MAX_CONTENT_BYTES + 500, "the string actually shrank");
+    }
+
+    #[test]
+    fn clamping_never_splits_a_multibyte_character() {
+        // Each '€' is three bytes, so a 20-byte ceiling lands mid-character.
+        // Popping whole chars keeps the result valid UTF-8: 6 chars fit in 20.
+        let clamped = clamp_bytes("€".repeat(10), 20);
+        assert_eq!(clamped.matches('€').count(), 6);
+    }
+
+    #[test]
+    fn the_truncation_marker_pushes_the_result_past_the_limit() {
+        // KNOWN DEVIATION: clamp_bytes trims to `max` and *then* appends the
+        // marker, so the value it returns is longer than the ceiling it was
+        // given. Pinned here so that changing it is a deliberate decision
+        // rather than an accident.
+        let clamped = clamp_bytes("b".repeat(200), 100);
+        assert_eq!(clamped.len(), 100 + MARKER.len());
+        assert!(clamped.len() > 100);
+    }
+
+    // --- 5. Tag extraction ------------------------------------------------
+
+    #[test]
+    fn a_leading_tag_becomes_the_context_and_leaves_the_content() {
+        let (tag, content) = extract_tag("#meeting discuss roadmap");
+        assert_eq!(tag, "meeting");
+        assert_eq!(content, "discuss roadmap");
+    }
+
+    #[test]
+    fn content_without_a_tag_falls_back_to_the_default_context() {
+        let (tag, content) = extract_tag("  just a note  ");
+        assert_eq!(tag, DEFAULT_CONTEXT);
+        assert_eq!(content, "just a note");
+    }
+
+    #[test]
+    fn a_tag_is_found_anywhere_in_the_content() {
+        let (tag, content) = extract_tag("ship the #release today");
+        assert_eq!(tag, "release");
+        // Removing the tag in place leaves the surrounding spacing behind.
+        assert_eq!(content, "ship the  today");
+    }
+
+    #[test]
+    fn only_the_first_tag_is_extracted() {
+        let (tag, content) = extract_tag("#one and #two");
+        assert_eq!(tag, "one");
+        assert_eq!(content, "and #two", "later tags stay in the captured text");
+    }
+
+    #[test]
+    fn a_tag_stops_at_the_first_disallowed_character() {
+        let (tag, content) = extract_tag("#build.fast go");
+        assert_eq!(tag, "build");
+        assert_eq!(content, ".fast go");
+    }
+
+    #[test]
+    fn a_bare_hash_is_not_a_tag() {
+        let (tag, content) = extract_tag("# not a tag");
+        assert_eq!(tag, DEFAULT_CONTEXT);
+        assert_eq!(content, "# not a tag");
+    }
+
+    #[test]
+    fn a_tag_is_captured_only_up_to_the_character_limit() {
+        // KNOWN DEVIATION: the regex caps the match at MAX_TAG_CHARS, but the
+        // overflow characters are left behind in the content instead of being
+        // consumed along with the tag.
+        let overlong = "a".repeat(MAX_TAG_CHARS + 5);
+        let (tag, content) = extract_tag(&format!("#{overlong} rest"));
+
+        assert_eq!(tag.len(), MAX_TAG_CHARS);
+        assert_eq!(content, "aaaaa rest");
+    }
+
+    #[test]
+    fn tag_extraction_accepts_digits_underscores_and_hyphens() {
+        for (input, expected) in [
+            ("#v1_2-3 note", "v1_2-3"),
+            ("#UPPER note", "UPPER"),
+            ("#123 note", "123"),
+        ] {
+            let (tag, _) = extract_tag(input);
+            assert_eq!(tag, expected, "input: {input}");
+        }
+    }
+}

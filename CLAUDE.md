@@ -21,8 +21,23 @@ a build artifact; edit the parts, never the artifact.
 
 ## Verification
 
-No CI workflow and no test script exist in this repo. Build surfaces are `npm run build` and
-`npm run tauri`; `bash doc/system/BUILD.sh` must still succeed after documentation changes.
+```bash
+npm install && npm run build      # creates dist/ — cargo needs it
+cd src-tauri && cargo test        # 43 unit tests
+```
+
+**`cargo test` fails without `dist/`.** `tauri::generate_context!` reads the
+`frontendDist` path at compile time, so the Rust tests do not build until the
+frontend bundle exists. The build also needs the Tauri Linux system libraries
+(`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, and the rest listed in
+`doc/system/50_operations/10-testing.md`).
+
+No CI workflow exists in this repo. `bash doc/system/BUILD.sh` must still
+succeed after documentation changes.
+
+Some tests carry a `KNOWN DEVIATION` comment. These pin behavior that differs
+from the documented intent. Do not treat them as endorsement — a fix must
+change the test in the same commit.
 
 ```bash
 ./scripts/context-bundle.sh --list
