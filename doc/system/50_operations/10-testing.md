@@ -40,7 +40,7 @@ The suite also covers these areas:
 | The hotkey binding | `main.rs` | The documented `HOTKEY` string parses, and it names the combination that gets registered |
 | The log | `util/log.rs` | A report reaches the file stamped, the file rotates at its ceiling and keeps one previous, an over-long line is shortened, and a log that cannot be written does not take the caller down |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
-| Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes, hides the overlay, and clears the box |
+| Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes and hides the overlay, and only a confirmed note clears the box |
 | The overlay wiring | `src/overlay.ts` | Enter sends what was on screen, Escape puts the overlay away without capturing, the marker button captures with no reason, and the overlay arrives focused |
 | Text the user has not lost | `src/overlay.ts` | A refusal and a timeout both leave the box and the window alone, and a reply arriving after the revert never takes text typed since |
 
@@ -71,14 +71,12 @@ rotation without writing a megabyte to do it. The tests build a `LogFile` in a
 temporary directory and never call `log::init_in`, so the process-wide log stays
 closed and nothing in the suite writes to the real user profile.
 
-Every test asserts intended behavior, with one exception.
+Every test asserts intended behavior. No test currently pins a known deviation.
 
-**One `KNOWN DEVIATION` stands.** `src/overlay.test.ts` records that a marker
-clears a note the user typed and never captured. The marker button is a
-separate action, but a confirmed capture of any kind clears the box, so
-clicking it erases un-captured text and closes the window over it. Everywhere
-else the overlay treats that text as the only copy anyone has. The test states
-the deviation and holds the behaviour as it stands.
+One stood briefly: a marker cleared a note the user typed and never captured,
+because a confirmed capture of any kind cleared the box. Clearing now belongs
+to the note capture alone, and the test that recorded the deviation asserts the
+fix.
 
 A test that must record behavior differing from the documented intent is marked
 with a `KNOWN DEVIATION` comment that states the deviation. A fix must change
