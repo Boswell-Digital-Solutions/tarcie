@@ -160,13 +160,10 @@ describe("the other gestures", () => {
     expect(h.invoke).toHaveBeenCalledWith("capture_marker", { reason: null });
   });
 
-  it("KNOWN DEVIATION: a marker clears a note the user never captured", async () => {
-    // Deviation: the marker button is a separate action, but a confirmed
-    // capture of any kind clears the box. Text typed and not yet captured is
-    // therefore erased by clicking the marker, and the window closes over it.
-    // Everywhere else the overlay treats that text as the only copy anyone
-    // has. This test records the behaviour as it stands; a fix changes it in
-    // the same commit.
+  it("leaves an uncaptured note alone when a marker is captured", async () => {
+    // The marker is a separate gesture that happens to share the overlay. It
+    // used to take the box with it, so text typed and never captured was
+    // erased by a click that had nothing to do with it.
     const h = overlay();
     h.input.value = "a note never captured";
 
@@ -174,8 +171,23 @@ describe("the other gestures", () => {
     await settle();
     await vi.advanceTimersByTimeAsync(FLASH_MS);
 
-    expect(h.input.value).toBe("");
+    expect(h.input.value, "the note is still there to send").toBe(
+      "a note never captured",
+    );
     expect(h.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("still clears the box when the note itself was captured", async () => {
+    // The fix is about whose gesture owns the box, not about keeping text
+    // after a capture that took it.
+    const h = overlay();
+    h.input.value = "a note";
+
+    press(h.input, "Enter");
+    await settle();
+    await vi.advanceTimersByTimeAsync(FLASH_MS);
+
+    expect(h.input.value).toBe("");
   });
 
   it("arrives ready to be typed into", () => {

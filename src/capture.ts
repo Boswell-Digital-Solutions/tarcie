@@ -50,6 +50,14 @@ export async function runCapture(
   }
 }
 
+/**
+ * Which capture was asked for.
+ *
+ * The note capture owns the box the user typed in. The marker does not: it is
+ * a separate gesture that happens to share the overlay.
+ */
+export type CaptureKind = "note" | "marker";
+
 /** What the overlay does about an outcome. */
 export interface CaptureEffect {
   /** Show the confirmation. */
@@ -68,9 +76,20 @@ export interface CaptureEffect {
  * failure states, and the revert is what keeps the user unblocked. The text on
  * screen is also the only copy anybody can point to, so an unproven capture
  * never clears it.
+ *
+ * Clearing belongs to the note capture alone. A marker took the box with it
+ * when it was confirmed, so text typed and never captured was erased by a
+ * gesture that had nothing to do with it.
  */
-export function effectFor(outcome: CaptureOutcome): CaptureEffect {
+export function effectFor(
+  outcome: CaptureOutcome,
+  kind: CaptureKind,
+): CaptureEffect {
   const confirmed = outcome === "captured";
 
-  return { flash: confirmed, hideWindow: confirmed, clearInput: confirmed };
+  return {
+    flash: confirmed,
+    hideWindow: confirmed,
+    clearInput: confirmed && kind === "note",
+  };
 }

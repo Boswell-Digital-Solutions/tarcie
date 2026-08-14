@@ -82,33 +82,58 @@ describe("runCapture", () => {
 });
 
 describe("effectFor", () => {
-  it("confirms, hides, and clears when the capture was confirmed", () => {
-    expect(effectFor("captured")).toEqual({
+  it("confirms, hides, and clears when a note was captured", () => {
+    expect(effectFor("captured", "note")).toEqual({
       flash: true,
       hideWindow: true,
       clearInput: true,
     });
   });
 
+  it("confirms and hides on a marker, and leaves the box alone", () => {
+    // The marker is a separate gesture that happens to share the overlay.
+    // Clearing on its behalf erased text the user typed and never captured.
+    expect(effectFor("captured", "marker")).toEqual({
+      flash: true,
+      hideWindow: true,
+      clearInput: false,
+    });
+  });
+
   it("leaves the overlay as it is when nothing confirmed the capture", () => {
     // The overlay holds the only copy anyone can point to, so an unproven
     // capture never clears it — and section 9 rules out saying so on screen.
-    for (const outcome of ["failed", "unconfirmed"] as const) {
-      const effect = effectFor(outcome);
+    for (const kind of ["note", "marker"] as const) {
+      for (const outcome of ["failed", "unconfirmed"] as const) {
+        const effect = effectFor(outcome, kind);
+        const where = `${kind}/${outcome}`;
 
-      expect(effect.flash, outcome).toBe(false);
-      expect(effect.hideWindow, outcome).toBe(false);
-      expect(effect.clearInput, outcome).toBe(false);
+        expect(effect.flash, where).toBe(false);
+        expect(effect.hideWindow, where).toBe(false);
+        expect(effect.clearInput, where).toBe(false);
+      }
     }
   });
 
   it("never clears the text without also having confirmed the capture", () => {
     const outcomes: CaptureOutcome[] = ["captured", "failed", "unconfirmed"];
 
-    for (const outcome of outcomes) {
-      const effect = effectFor(outcome);
+    for (const kind of ["note", "marker"] as const) {
+      for (const outcome of outcomes) {
+        const effect = effectFor(outcome, kind);
 
-      expect(effect.clearInput && !effect.flash, outcome).toBe(false);
+        expect(effect.clearInput && !effect.flash, `${kind}/${outcome}`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it("only ever clears the box for the gesture that owns it", () => {
+    const outcomes: CaptureOutcome[] = ["captured", "failed", "unconfirmed"];
+
+    for (const outcome of outcomes) {
+      expect(effectFor(outcome, "marker").clearInput, outcome).toBe(false);
     }
   });
 });
