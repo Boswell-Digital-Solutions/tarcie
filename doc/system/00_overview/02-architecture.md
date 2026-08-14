@@ -54,6 +54,10 @@
 | `state.rs` | -- | `AppState` (config, queue, flusher, device_id, mono_start) |
 | `util/` | `paths.rs`, `device.rs`, `log.rs` | Platform directory paths via `directories` crate, the device identity, and the operational log |
 
+The frontend is three modules: `main.ts` finds the elements and hands
+`overlay.ts` the real Tauri calls, `overlay.ts` wires the gestures, and
+`capture.ts` holds the decisions apart from the DOM and from Tauri.
+
 ## Data Flow
 
 1. User presses `Ctrl+Alt+T` -- overlay toggles visibility
