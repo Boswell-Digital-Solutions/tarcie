@@ -1,4 +1,5 @@
 use crate::model::TarcieEvent;
+use crate::util::log;
 use crate::util::paths::{queue_dir, sent_dir};
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -240,10 +241,10 @@ impl JsonlQueue {
 
         // Reaching the cap means delivery has been failing for a long time.
         // Nothing else reports that.
-        eprintln!(
-            "tarcie: queue reached its cap, moved to {} to await delivery",
+        log::write(format_args!(
+            "queue reached its cap, moved to {} to await delivery",
             target.display()
-        );
+        ));
 
         Ok(())
     }
@@ -275,7 +276,7 @@ fn read_tolerant(path: &Path) -> Result<Vec<TarcieEvent>> {
         let line = match line {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("tarcie: queue read error at line {}: {}", idx + 1, e);
+                log::write(format_args!("queue read error at line {}: {}", idx + 1, e));
                 continue;
             }
         };
@@ -285,7 +286,7 @@ fn read_tolerant(path: &Path) -> Result<Vec<TarcieEvent>> {
         match serde_json::from_str::<TarcieEvent>(&line) {
             Ok(ev) => out.push(ev),
             Err(e) => {
-                eprintln!("tarcie: malformed json at line {}: {}", idx + 1, e);
+                log::write(format_args!("malformed json at line {}: {}", idx + 1, e));
                 continue;
             }
         }

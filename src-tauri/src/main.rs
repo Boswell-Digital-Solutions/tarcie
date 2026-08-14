@@ -19,10 +19,12 @@ use crate::sink::client::SinkClient;
 use crate::sink::config::SinkConfig;
 use crate::state::AppState;
 use crate::util::device::load_or_create_device_id;
+use crate::util::log;
+use crate::util::paths::logs_dir;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Manager, WebviewWindow};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 /// The capture hotkey, built from the string the documentation states.
 ///
@@ -49,7 +51,27 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
+            // The log opens first, so everything after it can report. A log
+            // that will not open is not a reason to refuse to capture: the
+            // reports fall back to stderr and the application carries on.
+            match logs_dir() {
+                Ok(dir) => {
+                    if let Err(e) = log::init_in(&dir) {
+                        eprintln!("tarcie: could not open the log: {e}");
+                    }
+                }
+                Err(e) => eprintln!("tarcie: could not resolve the log dir: {e}"),
+            }
+
             let cfg = SinkConfig::from_env()?;
+
+            // Where events go and how often. The URL is reported without any
+            // credentials it carries, and the auth token is never reported.
+            log::write(format_args!(
+                "started, sink {}, flush every {}s",
+                cfg.url_without_credentials(),
+                cfg.flush_interval_secs
+            ));
 
             let queue = Arc::new(JsonlQueue::new()?);
 
@@ -108,10 +130,10 @@ fn main() {
                         // that has been refusing for days looking like a sink
                         // with nothing to do.
                         Ok(FlushResult::Deferred { reason }) => {
-                            eprintln!("tarcie: flush deferred, every event kept: {}", reason);
+                            log::write(format_args!("flush deferred, every event kept: {}", reason));
                         }
                         Ok(FlushResult::Empty) | Ok(FlushResult::Success { .. }) => {}
-                        Err(e) => eprintln!("tarcie: background flush error: {}", e),
+                        Err(e) => log::write(format_args!("background flush error: {}", e)),
                     }
                 }
             });
@@ -150,6 +172,9 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only the test names the combination directly. The application builds it
+    // from HOTKEY, which is the point.
+    use tauri_plugin_global_shortcut::{Code, Modifiers};
 
     #[test]
     fn the_documented_hotkey_is_the_one_that_gets_registered() {

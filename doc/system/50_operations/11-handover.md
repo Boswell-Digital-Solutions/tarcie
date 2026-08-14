@@ -11,7 +11,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 78 Rust unit tests and 9 frontend unit tests, and a CI
+The repository has 85 Rust unit tests and 9 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -86,3 +86,4 @@ export TARCIE_BATCH_MAX=50
 | Tauri config | `src-tauri/tauri.conf.json` |
 | Queue files | Platform queue dir via `directories` crate |
 | Device ID | Platform data dir via `directories` crate |
+| Log | `<data dir>/logs/tarcie.log`, with one previous file beside it |
