@@ -362,9 +362,18 @@ The queue is the durable buffer between capture and flush. Implemented in `queue
 1. Serialize `TarcieEvent` to a JSON string
 2. Sanity-parse the string back (catch serialization bugs early)
 3. Append the line to `queue.jsonl`
-4. `fsync` the file (durability guarantee)
+4. `fsync` the file
+5. `fsync` the queue directory, when this append created the file
 
 All appends are protected by a `Mutex` to prevent interleaved writes from concurrent IPC calls.
+
+Step 5 is the other half of step 4. An `fsync` on a file covers its contents.
+It says nothing about the directory entry that names the file, so after a power
+loss the data can be on the disk with nothing pointing at it. For a newly
+created `queue.jsonl` that is every capture in it.
+
+Only the append that creates the file pays for the second sync, so the cost
+falls once per flush cycle rather than once per capture.
 
 ## Read (Tolerant)
 
@@ -442,6 +451,39 @@ name is free and takes a fresh stamp if it is not. A retry sorts after the name
 it could not have, so claim order still follows the clock. When no free name
 turns up, the placement fails: a failed flush leaves every event queued for the
 next one, which the reliability contract prefers to an overwrite.
+
+## Durable Placement
+
+Every rename in the queue is a handoff of custody, and a rename that has not
+reached the disk is one a power loss can undo. The same four callers that take
+their names through `free_path` — claim, defer, archive, and cap rotation — put
+the file in place through `rename_durably`.
+
+It syncs both directories: the one that gains the name, so the events are
+findable under it, and the one that loses it, so the old name cannot come back
+and offer the same events a second time.
+
+Windows cannot open a directory as a file and has no equivalent call. Tarcie
+qualifies on Linux first, so the sync is a no-op there rather than a failure.
+
+## Retention
+
+The sent directory is never pruned. Nothing in tarcie deletes a file, so every
+event ever captured stays on the disk under `queue/sent/` after it has been
+delivered, for the life of the installation.
+
+Two consequences follow, and neither is yet an operator decision that has been
+taken:
+
+- **Disk.** The archive grows without limit. Cap rotation bounds the size of
+  one file and nothing bounds the total.
+- **Retention.** A write-only capture tool keeps a complete plain-text copy of
+  everything the user has captured. Section 8 records that there is no
+  encryption at rest, which this compounds.
+
+Whether the archive is a safety net worth its cost, or should age out, is a
+decision for the operator. Tarcie does not take it, and this section exists so
+that the decision is made rather than inherited.
 
 ## Capacity
 
@@ -953,6 +995,7 @@ The suite also covers these areas:
 | The request bound | `sink/client.rs` | A sink that never answers is given up on at the bound, and a sink that answers inside the bound is not cut off |
 | A sink that stops answering | `flusher.rs` | The production path carries a deadline, so a flush over a silent sink ends instead of running on |
 | The deferral reason | `flusher.rs` | A deferral names the cause and not only the attempt |
+| Durable placement | `queue/jsonl.rs` | A placement moves the file and neither directory sync errors, and a placement that cannot happen leaves the batch where it was |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
 | Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes and hides the overlay, and only a confirmed note clears the box |
 | The overlay wiring | `src/overlay.ts` | Enter sends what was on screen, Escape puts the overlay away without capturing, the marker button captures with no reason, and the overlay arrives focused |
@@ -1109,13 +1152,19 @@ These areas have no tests:
 3. **That every stamped path goes through `free_path`.** The guard itself has
    tests. That each of the four callers uses it — claim, defer, archive, and
    cap rotation — is verified by reading. Forcing a collision through a caller
-   needs control of the clock and the sequence, which no seam offers.
-4. **Hotkey registration, the window toggle, and the shutdown flush.** All
+   needs control of the clock and the sequence, which no seam offers. The same
+   reading covers `rename_durably`, which the same four callers use.
+4. **That a placement survives a power loss.** `rename_durably` and the append
+   that creates the queue file both sync the directory, and the tests prove the
+   syncs run and cost nothing in behaviour. Whether the entry is on the platter
+   afterwards is a property of the disk, and proving it needs power-loss
+   injection rather than a unit test.
+5. **Hotkey registration, the window toggle, and the shutdown flush.** All
    three run on the event loop of a real window, so they need a running
    desktop session. The hotkey *string* is covered: a test proves `HOTKEY`
    parses and names the combination the code registers. Whether the operating
    system then grants that combination is not covered.
-5. **The bootstrap in `src/main.ts`.** It finds the four elements and hands
+6. **The bootstrap in `src/main.ts`.** It finds the four elements and hands
    `wireOverlay` the real Tauri calls, and does nothing else. Reaching it needs
    a running webview, because `@tauri-apps/api` only resolves inside one. The
    wiring it hands over is covered in `src/overlay.test.ts`.
@@ -1135,7 +1184,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 89 Rust unit tests and 22 frontend unit tests, and a CI
+The repository has 91 Rust unit tests and 22 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -1159,6 +1208,11 @@ and what they do not.
   size of one file, not the number of files, and a claim reads every one of
   them into memory. A sink that stays down therefore costs disk and memory.
   The contract prefers that to discarding a capture.
+- **The sent archive is never pruned.** Nothing in tarcie deletes a file, so
+  every delivered event stays on the disk under `queue/sent/` for the life of
+  the installation. That is unbounded disk, and a complete plain-text copy of
+  every capture, on a tool that has no encryption at rest. Section 5 records
+  the decision this leaves open.
 - **A crash between a partial delivery and its archive duplicates the
   remainder.** The undelivered events are written back before the originals are
   archived, so a crash between those two steps offers the remainder again. This

@@ -42,6 +42,7 @@ The suite also covers these areas:
 | The request bound | `sink/client.rs` | A sink that never answers is given up on at the bound, and a sink that answers inside the bound is not cut off |
 | A sink that stops answering | `flusher.rs` | The production path carries a deadline, so a flush over a silent sink ends instead of running on |
 | The deferral reason | `flusher.rs` | A deferral names the cause and not only the attempt |
+| Durable placement | `queue/jsonl.rs` | A placement moves the file and neither directory sync errors, and a placement that cannot happen leaves the batch where it was |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
 | Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes and hides the overlay, and only a confirmed note clears the box |
 | The overlay wiring | `src/overlay.ts` | Enter sends what was on screen, Escape puts the overlay away without capturing, the marker button captures with no reason, and the overlay arrives focused |
@@ -198,13 +199,19 @@ These areas have no tests:
 3. **That every stamped path goes through `free_path`.** The guard itself has
    tests. That each of the four callers uses it — claim, defer, archive, and
    cap rotation — is verified by reading. Forcing a collision through a caller
-   needs control of the clock and the sequence, which no seam offers.
-4. **Hotkey registration, the window toggle, and the shutdown flush.** All
+   needs control of the clock and the sequence, which no seam offers. The same
+   reading covers `rename_durably`, which the same four callers use.
+4. **That a placement survives a power loss.** `rename_durably` and the append
+   that creates the queue file both sync the directory, and the tests prove the
+   syncs run and cost nothing in behaviour. Whether the entry is on the platter
+   afterwards is a property of the disk, and proving it needs power-loss
+   injection rather than a unit test.
+5. **Hotkey registration, the window toggle, and the shutdown flush.** All
    three run on the event loop of a real window, so they need a running
    desktop session. The hotkey *string* is covered: a test proves `HOTKEY`
    parses and names the combination the code registers. Whether the operating
    system then grants that combination is not covered.
-5. **The bootstrap in `src/main.ts`.** It finds the four elements and hands
+6. **The bootstrap in `src/main.ts`.** It finds the four elements and hands
    `wireOverlay` the real Tauri calls, and does nothing else. Reaching it needs
    a running webview, because `@tauri-apps/api` only resolves inside one. The
    wiring it hands over is covered in `src/overlay.test.ts`.

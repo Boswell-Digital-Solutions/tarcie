@@ -61,6 +61,56 @@ fn free_path(dir: &Path, name: impl Fn(&str) -> String) -> Result<PathBuf> {
     )
 }
 
+/// Put a directory entry on the disk.
+///
+/// `File::sync_all` flushes a file's own contents and metadata. It says nothing
+/// about the directory that names it. After a power loss the data can be on the
+/// disk with no entry pointing at it, and for a queue file that means every
+/// capture in it is gone. POSIX answers that by fsyncing the directory, which is
+/// what this does.
+///
+/// Windows cannot open a directory as a file and has no equivalent call. Tarcie
+/// qualifies on Linux first, so this is a no-op there rather than a failure.
+#[cfg(unix)]
+fn sync_dir(dir: &Path) -> Result<()> {
+    File::open(dir)
+        .with_context(|| format!("open {} to sync", dir.display()))?
+        .sync_all()
+        .with_context(|| format!("sync {}", dir.display()))
+}
+
+#[cfg(not(unix))]
+fn sync_dir(_dir: &Path) -> Result<()> {
+    Ok(())
+}
+
+/// Rename a file and put the new name on the disk.
+///
+/// Every rename in the queue is a handoff of custody, and a rename that has not
+/// reached the disk is one a power loss can undo. Both directories are synced:
+/// the one that gains the name, so the events are findable under it, and the one
+/// that loses it, so the old name cannot come back and offer the same events a
+/// second time.
+///
+/// The four callers are the same four that take their names through
+/// `free_path` — claim, defer, archive, and cap rotation.
+fn rename_durably(from: &Path, to: &Path) -> Result<()> {
+    fs::rename(from, to)?;
+
+    let gained = to.parent();
+    if let Some(dir) = gained {
+        sync_dir(dir)?;
+    }
+
+    if let Some(dir) = from.parent() {
+        if Some(dir) != gained {
+            sync_dir(dir)?;
+        }
+    }
+
+    Ok(())
+}
+
 /// A batch of events taken out of the live queue and held for delivery.
 ///
 /// Claiming moves the queue file aside, so events captured while a flush is in
@@ -124,6 +174,10 @@ impl JsonlQueue {
         let json = serde_json::to_string(event).context("serialize event")?;
         let _: Value = serde_json::from_str(&json).context("sanity parse json")?;
 
+        // Whether this append is the one that creates the file decides whether
+        // the directory needs syncing after it.
+        let creates_the_file = !self.queue_path.exists();
+
         let mut f = OpenOptions::new()
             .create(true)
             .append(true)
@@ -136,6 +190,17 @@ impl JsonlQueue {
 
         // Proper fsync for durability
         f.sync_all().context("fsync queue file")?;
+
+        // The fsync above covers the contents. A file that has just been
+        // created also needs the entry naming it on the disk, or a power loss
+        // leaves the events with nothing pointing at them. Only the append that
+        // creates the file pays for this, so the cost falls once per flush
+        // cycle rather than once per capture.
+        if creates_the_file {
+            if let Some(dir) = self.queue_path.parent() {
+                sync_dir(dir).context("sync the queue directory")?;
+            }
+        }
 
         Ok(())
     }
@@ -157,7 +222,7 @@ impl JsonlQueue {
 
         if self.queue_path.exists() {
             let target = free_path(&self.sending_dir, |s| format!("{s}.jsonl"))?;
-            fs::rename(&self.queue_path, &target).context("claim the queue file")?;
+            rename_durably(&self.queue_path, &target).context("claim the queue file")?;
         }
 
         let mut files = self.sending_files()?;
@@ -205,7 +270,7 @@ impl JsonlQueue {
     fn archive(&self, files: Vec<PathBuf>) -> Result<()> {
         for file in files {
             let target = free_path(&self.sent_path, |s| format!("queue.sent.{s}.jsonl"))?;
-            fs::rename(&file, &target).context("archive a delivered batch")?;
+            rename_durably(&file, &target).context("archive a delivered batch")?;
         }
         Ok(())
     }
@@ -237,7 +302,7 @@ impl JsonlQueue {
         }
 
         let target = free_path(&self.sending_dir, |s| format!("{s}.cap.jsonl"))?;
-        fs::rename(&self.queue_path, &target).context("rotate the capped queue file")?;
+        rename_durably(&self.queue_path, &target).context("rotate the capped queue file")?;
 
         // Reaching the cap means delivery has been failing for a long time.
         // Nothing else reports that.
@@ -319,7 +384,7 @@ fn write_events(path: &Path, events: &[TarcieEvent]) -> Result<()> {
     f.sync_all().context("fsync the deferred batch")?;
     drop(f);
 
-    fs::rename(&temp, path).context("put the deferred batch in place")?;
+    rename_durably(&temp, path).context("put the deferred batch in place")?;
     Ok(())
 }
 
@@ -731,6 +796,53 @@ mod tests {
             fs::read_to_string(&orphan).expect("read the orphan"),
             "an undelivered batch",
             "nothing was written over it"
+        );
+    }
+
+    // --- Durable placement -------------------------------------------------
+    //
+    // A rename that has not reached the disk is one a power loss can undo.
+    // Whether it survives a power loss is not testable here; that these two
+    // syncs cost nothing in behaviour is.
+
+    #[test]
+    fn a_durable_placement_moves_the_file_and_syncs_both_directories() {
+        let dir = TempDir::new().expect("create temp dir");
+        let from_dir = dir.path().join("from");
+        let to_dir = dir.path().join("to");
+        fs::create_dir_all(&from_dir).expect("create the source dir");
+        fs::create_dir_all(&to_dir).expect("create the target dir");
+
+        let source = from_dir.join("batch.jsonl");
+        let target = to_dir.join("batch.jsonl");
+        fs::write(&source, "a batch").expect("write the batch");
+
+        // A directory either sync cannot open would fail here rather than be
+        // skipped without a word.
+        rename_durably(&source, &target).expect("place the batch durably");
+
+        assert!(!source.exists(), "the old name is gone");
+        assert_eq!(
+            fs::read_to_string(&target).expect("read the batch"),
+            "a batch"
+        );
+    }
+
+    #[test]
+    fn a_placement_that_cannot_happen_leaves_the_events_where_they_were() {
+        // The same ground `free_path` holds: a placement that cannot happen
+        // costs a retry and never a capture.
+        let dir = TempDir::new().expect("create temp dir");
+        let source = dir.path().join("batch.jsonl");
+        fs::write(&source, "an undelivered batch").expect("write the batch");
+
+        let result = rename_durably(&source, &dir.path().join("gone").join("batch.jsonl"));
+
+        assert!(result.is_err(), "a placement into a missing directory fails");
+        assert_eq!(
+            fs::read_to_string(&source).expect("read the batch"),
+            "an undelivered batch",
+            "the batch is still where the next flush will find it"
         );
     }
 

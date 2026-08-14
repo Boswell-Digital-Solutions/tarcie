@@ -13,9 +13,18 @@ The queue is the durable buffer between capture and flush. Implemented in `queue
 1. Serialize `TarcieEvent` to a JSON string
 2. Sanity-parse the string back (catch serialization bugs early)
 3. Append the line to `queue.jsonl`
-4. `fsync` the file (durability guarantee)
+4. `fsync` the file
+5. `fsync` the queue directory, when this append created the file
 
 All appends are protected by a `Mutex` to prevent interleaved writes from concurrent IPC calls.
+
+Step 5 is the other half of step 4. An `fsync` on a file covers its contents.
+It says nothing about the directory entry that names the file, so after a power
+loss the data can be on the disk with nothing pointing at it. For a newly
+created `queue.jsonl` that is every capture in it.
+
+Only the append that creates the file pays for the second sync, so the cost
+falls once per flush cycle rather than once per capture.
 
 ## Read (Tolerant)
 
@@ -93,6 +102,39 @@ name is free and takes a fresh stamp if it is not. A retry sorts after the name
 it could not have, so claim order still follows the clock. When no free name
 turns up, the placement fails: a failed flush leaves every event queued for the
 next one, which the reliability contract prefers to an overwrite.
+
+## Durable Placement
+
+Every rename in the queue is a handoff of custody, and a rename that has not
+reached the disk is one a power loss can undo. The same four callers that take
+their names through `free_path` — claim, defer, archive, and cap rotation — put
+the file in place through `rename_durably`.
+
+It syncs both directories: the one that gains the name, so the events are
+findable under it, and the one that loses it, so the old name cannot come back
+and offer the same events a second time.
+
+Windows cannot open a directory as a file and has no equivalent call. Tarcie
+qualifies on Linux first, so the sync is a no-op there rather than a failure.
+
+## Retention
+
+The sent directory is never pruned. Nothing in tarcie deletes a file, so every
+event ever captured stays on the disk under `queue/sent/` after it has been
+delivered, for the life of the installation.
+
+Two consequences follow, and neither is yet an operator decision that has been
+taken:
+
+- **Disk.** The archive grows without limit. Cap rotation bounds the size of
+  one file and nothing bounds the total.
+- **Retention.** A write-only capture tool keeps a complete plain-text copy of
+  everything the user has captured. Section 8 records that there is no
+  encryption at rest, which this compounds.
+
+Whether the archive is a safety net worth its cost, or should age out, is a
+decision for the operator. Tarcie does not take it, and this section exists so
+that the decision is made rather than inherited.
 
 ## Capacity
 
