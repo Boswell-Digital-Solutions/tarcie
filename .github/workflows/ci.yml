@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test and document build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri links against the GTK and WebKit stack. Without these the build
+      # stops at gdk-sys, before it reaches any Tarcie code.
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            build-essential \
+            pkg-config
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # tauri::generate_context! reads frontendDist at compile time, so the
+      # Rust tests do not build until dist/ exists.
+      - name: Build the frontend bundle
+        run: npm run build
+
+      - name: Cache cargo registry and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Run the test suite
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build the system document
+        run: bash doc/system/BUILD.sh
+
+      # doc/TARSYSTEM.md is assembled output. A change to doc/system/ that
+      # ships without a rebuild leaves the compiled artifact stale.
+      - name: Check the compiled document is not stale
+        run: git diff --exit-code doc/TARSYSTEM.md

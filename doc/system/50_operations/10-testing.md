@@ -42,6 +42,15 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
   build-essential pkg-config
 ```
 
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs on every pull request and on a push to `main`.
+It installs the system libraries, runs `npm ci` and `npm run build`, runs
+`cargo test`, and then runs `bash doc/system/BUILD.sh`.
+
+The final step runs `git diff --exit-code doc/TARSYSTEM.md`. A change under
+`doc/system/` that ships without a rebuild fails the job.
+
 ## Building
 
 ```bash
