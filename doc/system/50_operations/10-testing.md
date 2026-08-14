@@ -86,6 +86,11 @@ that test in the same commit.
 
 ## Prerequisites
 
+**Node 22.22.2 or later**, as `package.json` declares. jsdom 30 needs it: on
+Node 20 its undici dependency reaches for `webidl` internals that are not there
+yet, and the overlay suite dies on import rather than failing a test. CI pins
+the same version.
+
 `cargo test` builds the full Tauri binary, so it needs the frontend bundle and
 the Linux system libraries.
 
