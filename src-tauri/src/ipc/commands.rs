@@ -138,12 +138,32 @@ pub fn capture_note_into(state: &AppState, content: String) -> Result<(), String
 /// The capture path behind `capture_marker`, over a plain `&AppState`.
 pub fn capture_marker_into(state: &AppState, reason: Option<String>) -> Result<(), String> {
     let reason = reason.map(|r| clamp_bytes(r, MAX_CONTENT_BYTES));
+
+    // A marker's label is read the same way a note is: the first tag becomes
+    // the context, and whatever is left stays as the reason.
+    //
+    // A marker needs no text of its own, which is where it parts company with
+    // a note. The gesture is the observation, so a marker with only a tag is
+    // whole — it says a moment matters and names what it belongs to. That is
+    // the shape a tag-only note used to have before it was refused.
+    let (app_context, reason) = match reason {
+        Some(label) if !label.is_empty() => {
+            let (tag, cleaned) = extract_tag(&label);
+            let cleaned = clamp_bytes(cleaned, MAX_CONTENT_BYTES);
+            (
+                clamp_bytes(tag, MAX_CONTEXT_CHARS),
+                if cleaned.is_empty() { None } else { Some(cleaned) },
+            )
+        }
+        _ => (DEFAULT_CONTEXT.to_string(), None),
+    };
+
     let ev = build_event(
         state.device_id,
         state.mono_start,
         EventType::Marker { reason },
         String::new(),
-        DEFAULT_CONTEXT.to_string(),
+        app_context,
     );
 
     state
@@ -496,6 +516,39 @@ mod tests {
 
         match &queued(&state)[0].event_type {
             EventType::Marker { reason } => assert_eq!(reason.as_deref(), Some("stepping away")),
+            EventType::Note => panic!("expected a marker, got a note"),
+        }
+    }
+
+    #[test]
+    fn a_marker_label_that_is_only_a_tag_names_the_moment() {
+        // What a tag-only note used to do, in the place it belongs. A marker
+        // needs no text, because the gesture is the observation.
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        capture_marker_into(&state, Some("#bug".to_string())).expect("capture");
+
+        let events = queued(&state);
+        assert_eq!(events[0].app_context, "bug");
+        assert!(matches!(
+            events[0].event_type,
+            EventType::Marker { reason: None }
+        ));
+    }
+
+    #[test]
+    fn a_marker_label_splits_into_its_tag_and_the_rest() {
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        capture_marker_into(&state, Some("#bug the overlay froze".to_string()))
+            .expect("capture");
+
+        let events = queued(&state);
+        assert_eq!(events[0].app_context, "bug");
+        match &events[0].event_type {
+            EventType::Marker { reason } => {
+                assert_eq!(reason.as_deref(), Some("the overlay froze"))
+            }
             EventType::Note => panic!("expected a marker, got a note"),
         }
     }

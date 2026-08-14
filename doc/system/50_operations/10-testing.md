@@ -12,7 +12,7 @@ The frontend tests run under Vitest and live beside the code they cover:
 
 - `src/capture.test.ts` covers `src/capture.ts`, which holds the capture flow
   apart from the DOM and from Tauri — the five-second revert of constraint 1,
-  and the rule that only a confirmed capture clears the box. It runs in the
+  and the rule that the box is cleared by the capture that took it. It runs in the
   `node` environment, which is also a check that `capture.ts` needs no DOM.
 - `src/overlay.test.ts` covers `src/overlay.ts`, the wiring from a keyboard, a
   button, and a window to those decisions. It declares
@@ -43,11 +43,12 @@ The suite also covers these areas:
 | A sink that stops answering | `flusher.rs` | The production path carries a deadline, so a flush over a silent sink ends instead of running on |
 | The deferral reason | `flusher.rs` | A deferral names the cause and not only the attempt |
 | Nothing worth sending | `ipc/commands.rs` | A note that says nothing of its own never reaches the queue, whether it is empty, whitespace, a tag alone, or a string of tags, and a tagged observation still does |
+| Marker labels | `ipc/commands.rs` | A label that is only a tag names the moment, and a label with text beside it splits into the tag and the rest |
 | One capture per gesture | `src/overlay.ts` | An empty box sends nothing, a repeated Enter sends one capture, a refused note keeps its text on screen, and the next note is still taken |
 | Durable placement | `queue/jsonl.rs` | A placement moves the file and neither directory sync errors, and a placement that cannot happen leaves the batch where it was |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
-| Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes and hides the overlay, and only a confirmed note clears the box |
-| The overlay wiring | `src/overlay.ts` | Enter sends what was on screen, Escape puts the overlay away without capturing, the marker button captures with no reason, and the overlay arrives focused |
+| Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes and hides the overlay, and the box is cleared only by a confirmed capture that took it |
+| The overlay wiring | `src/overlay.ts` | Enter sends what was on screen, Escape puts the overlay away without capturing, the marker button captures with the box as its label or with none when the box is empty, and the overlay arrives focused |
 | Text the user has not lost | `src/overlay.ts` | A refusal and a timeout both leave the box and the window alone, and a reply arriving after the revert never takes text typed since |
 
 Each command needs a Tauri `State`, which a test cannot supply. Each one
@@ -100,9 +101,9 @@ closed and nothing in the suite writes to the real user profile.
 Every test asserts intended behavior. No test currently pins a known deviation.
 
 One stood briefly: a marker cleared a note the user typed and never captured,
-because a confirmed capture of any kind cleared the box. Clearing now belongs
-to the note capture alone, and the test that recorded the deviation asserts the
-fix.
+because a confirmed capture of any kind cleared the box. The test that recorded
+the deviation asserts the fix, and now states the rule that replaced it — the
+box is cleared by the capture that took it, and only once confirmed.
 
 A test that must record behavior differing from the documented intent is marked
 with a `KNOWN DEVIATION` comment that states the deviation. A fix must change

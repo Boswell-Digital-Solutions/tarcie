@@ -135,7 +135,15 @@ no hide, and the text still in the box. The window that did not go away is the w
 The text on screen is also the only copy anyone can point to when a capture is
 unproven, which is the second reason an unconfirmed capture never clears it.
 
-Clearing the box belongs to the note capture alone. `effectFor` takes the
-`CaptureKind` for that reason. A marker is a separate gesture that happens to
-share the overlay, and it used to take the box with it — so text typed and
-never captured was erased by a click that had nothing to do with it.
+The box is cleared by the capture that took it, and only once that capture is
+confirmed. `effectFor` takes whether the capture took the box for that reason,
+which is the question that matters. It used to take the kind of capture
+instead, and the kind is only a proxy.
+
+Both halves of the rule earn their place. A marker once cleared the box
+whatever it held, so text typed and never captured was erased by a click that
+had nothing to do with it. A marker that carries the text as its label has
+everything to do with it, and leaving that text behind would invite the same
+label being sent twice.
+
+A marker over an empty box takes nothing and clears nothing.

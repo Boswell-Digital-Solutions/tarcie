@@ -73,21 +73,36 @@ pub async fn capture_marker(
 
 **Behavior:**
 
-1. Clamp `reason` to `MAX_CONTENT_BYTES` if one was given
-2. Build a `TarcieEvent` with:
+1. Clamp `reason` to `MAX_CONTENT_BYTES` if one was given, which trims it
+2. Read the label the way a note is read: the first `#tag` becomes
+   `app_context`, and whatever is left stays as the `reason`
+3. Build a `TarcieEvent` with:
    - Fresh UUID
    - Device ID from state
    - UTC timestamp + monotonic offset
    - `EventType::Marker { reason }`
-   - An empty `content` and the default `app_context`
-3. Append the event to the JSONL queue (fsync-durable)
+   - An empty `content`
+4. Append the event to the JSONL queue (fsync-durable)
 
 **Returns:** `Ok(())`. There is no success payload.
 
 **Errors:** Returns the stringified error on a queue write failure.
 
-A marker carries no text by design, so the empty check that guards
-`capture_note` does not apply. The gesture is the observation.
+**A marker needs no text of its own**, which is where it parts company with a
+note. The gesture is the observation, so the check that guards `capture_note`
+does not apply here. A marker with no reason at all is whole, and so is one
+labelled only `#bug`: it says a moment matters and names what it belongs to.
+That is the shape a tag-only note used to have before notes began refusing it.
+
+| Reason in | `app_context` | `reason` stored |
+|---|---|---|
+| *(none)* | `General` | *(none)* |
+| `#bug` | `bug` | *(none)* |
+| `#bug the overlay froze` | `bug` | `the overlay froze` |
+| `stepping away` | `General` | `stepping away` |
+
+The overlay sends whatever is in the box as the label, so the same typing
+produces a note under Enter and a marker under the button.
 
 ---
 

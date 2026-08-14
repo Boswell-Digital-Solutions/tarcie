@@ -11,7 +11,7 @@ import {
   STATUS_CAPTURED,
   effectFor,
   runCapture,
-  type CaptureKind,
+  type TookTheBox,
 } from "./capture";
 
 /** How long the confirmation stays up before the overlay goes away. */
@@ -49,14 +49,17 @@ export function wireOverlay(ports: OverlayPorts): void {
    */
   let capturing = false;
 
-  async function capture(kind: CaptureKind, send: () => Promise<unknown>) {
+  async function capture(tookTheBox: TookTheBox, send: () => Promise<unknown>) {
     if (capturing) {
       return;
     }
     capturing = true;
 
     try {
-      const effect = effectFor(await runCapture(send, CAPTURE_TIMEOUT_MS), kind);
+      const effect = effectFor(
+        await runCapture(send, CAPTURE_TIMEOUT_MS),
+        tookTheBox,
+      );
 
       if (!effect.flash) {
         // Nothing confirmed the capture. The overlay stays exactly as it is,
@@ -102,7 +105,8 @@ export function wireOverlay(ports: OverlayPorts): void {
         return;
       }
 
-      capture("note", () => invoke("capture_note", { content })).catch(
+      // A note is the text in the box, so it always takes it.
+      capture(true, () => invoke("capture_note", { content })).catch(
         console.error,
       );
     } else if (e.key === "Escape") {
@@ -111,9 +115,14 @@ export function wireOverlay(ports: OverlayPorts): void {
   });
 
   marker.addEventListener("click", () => {
-    capture("marker", () => invoke("capture_marker", { reason: null })).catch(
-      console.error,
-    );
+    // Whatever is in the box becomes the marker's label. The gesture is the
+    // observation, so a marker needs no text — an empty box still marks the
+    // moment, and that is the only way left to say "here, and nothing more".
+    const reason = input.value.trim() === "" ? null : input.value;
+
+    capture(reason !== null, () =>
+      invoke("capture_marker", { reason }),
+    ).catch(console.error);
   });
 
   // The overlay exists to be typed into. It arrives ready.

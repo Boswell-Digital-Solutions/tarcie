@@ -51,12 +51,15 @@ export async function runCapture(
 }
 
 /**
- * Which capture was asked for.
+ * Whether the capture took what was in the box.
  *
- * The note capture owns the box the user typed in. The marker does not: it is
- * a separate gesture that happens to share the overlay.
+ * A note always takes it: the text in the box is the note. A marker takes it
+ * when the box held a label, and leaves it alone when the box was empty.
+ *
+ * This used to be the kind of capture, which was the wrong question. Clearing
+ * belongs to the capture that consumed the text, whichever gesture that was.
  */
-export type CaptureKind = "note" | "marker";
+export type TookTheBox = boolean;
 
 /** What the overlay does about an outcome. */
 export interface CaptureEffect {
@@ -77,19 +80,22 @@ export interface CaptureEffect {
  * screen is also the only copy anybody can point to, so an unproven capture
  * never clears it.
  *
- * Clearing belongs to the note capture alone. A marker took the box with it
- * when it was confirmed, so text typed and never captured was erased by a
- * gesture that had nothing to do with it.
+ * The box is cleared by the capture that took it, and only once that capture
+ * is confirmed. Both halves matter. A marker used to clear the box whatever it
+ * held, so text typed and never captured was erased by a gesture that had
+ * nothing to do with it. A marker that carries the text as its label has
+ * everything to do with it, and leaving it behind would invite the same text
+ * being sent twice.
  */
 export function effectFor(
   outcome: CaptureOutcome,
-  kind: CaptureKind,
+  tookTheBox: TookTheBox,
 ): CaptureEffect {
   const confirmed = outcome === "captured";
 
   return {
     flash: confirmed,
     hideWindow: confirmed,
-    clearInput: confirmed && kind === "note",
+    clearInput: confirmed && tookTheBox,
   };
 }

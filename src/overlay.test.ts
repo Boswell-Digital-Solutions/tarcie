@@ -230,21 +230,47 @@ describe("the other gestures", () => {
     expect(h.invoke).toHaveBeenCalledWith("capture_marker", { reason: null });
   });
 
-  it("leaves an uncaptured note alone when a marker is captured", async () => {
-    // The marker is a separate gesture that happens to share the overlay. It
-    // used to take the box with it, so text typed and never captured was
-    // erased by a click that had nothing to do with it.
+  it("takes what is in the box as the marker's label", async () => {
+    // A marker used to ignore the box, which left no way to say what a moment
+    // was about once a tag-only note was refused. It now carries the text as
+    // its label, so the text is captured rather than passed over.
     const h = overlay();
-    h.input.value = "a note never captured";
+    h.input.value = "#bug";
+
+    h.marker.click();
+    await settle();
+
+    expect(h.invoke).toHaveBeenCalledWith("capture_marker", {
+      reason: "#bug",
+    });
+  });
+
+  it("clears the box once the marker that took it is confirmed", async () => {
+    // The text was captured, so leaving it on screen would invite the same
+    // label being sent twice.
+    const h = overlay();
+    h.input.value = "#bug";
 
     h.marker.click();
     await settle();
     await vi.advanceTimersByTimeAsync(FLASH_MS);
 
-    expect(h.input.value, "the note is still there to send").toBe(
-      "a note never captured",
-    );
+    expect(h.input.value).toBe("");
     expect(h.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the label when nothing confirmed the marker", async () => {
+    // The ground the old rule was really defending: text is never taken off
+    // the screen by a capture that was not confirmed to have carried it.
+    const h = overlay(vi.fn().mockRejectedValue("no"));
+    h.input.value = "#bug";
+
+    h.marker.click();
+    await settle();
+    await vi.advanceTimersByTimeAsync(FLASH_MS);
+
+    expect(h.input.value).toBe("#bug");
+    expect(h.hide).not.toHaveBeenCalled();
   });
 
   it("still clears the box when the note itself was captured", async () => {
