@@ -98,13 +98,18 @@ fn main() {
             let flusher_close = Arc::clone(&flusher);
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    let rt = tokio::runtime::Handle::current();
                     let flusher = Arc::clone(&flusher_close);
-                    let _ = rt.block_on(async {
+
+                    // A window event arrives on the event loop thread, which
+                    // has no Tokio runtime entered. `Handle::current()` panics
+                    // there, so the final flush never ran. Tauri's own runtime
+                    // is reachable from any thread and blocks on it safely.
+                    let _ = tauri::async_runtime::block_on(async {
                         tokio::time::timeout(
-                            Duration::from_secs(5),
-                            flusher.flush_with_retry()
-                        ).await
+                            Duration::from_secs(SHUTDOWN_FLUSH_SECS),
+                            flusher.flush_with_retry(),
+                        )
+                        .await
                     });
                 }
             });

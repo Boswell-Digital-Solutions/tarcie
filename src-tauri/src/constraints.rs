@@ -19,6 +19,11 @@ pub const DEFAULT_QUEUE_MAX_EVENTS: usize = 10_000;
 pub const HOTKEY: &str = "Ctrl+Alt+T";
 pub const HOTKEY_DEBOUNCE_MS: u64 = 500;
 
+// How long a close waits for the final flush before the window goes. Every
+// capture is already durable on disk, so a slow sink delays the shutdown by
+// this much at most and never costs an event.
+pub const SHUTDOWN_FLUSH_SECS: u64 = 5;
+
 // MONOTONIC CLOCK LIMITATION:
 // timestamp_mono_ms resets on app restart. Use only for relative timing
 // within a session. Cross-session ordering relies on timestamp_utc.
