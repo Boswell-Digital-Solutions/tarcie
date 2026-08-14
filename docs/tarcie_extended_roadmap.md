@@ -1,13 +1,13 @@
 # tarcie Extended Roadmap
 
-**Document version:** 1.1 (2026-08-14) — verification hardening delivered
+**Document version:** 1.2 (2026-08-14) — reconciled with the working tree
 
 ## Current Status
 
 | Phase | Status | Outcome |
 | --- | --- | --- |
 | Documentation normalization | Complete | Protocol-required baseline surfaces are present |
-| Verification hardening | Complete | 52 unit tests and a CI workflow that runs them |
+| Verification hardening | Complete | Rust and frontend suites, both gated in CI alongside a typecheck |
 | Module catalog expansion | Pending | Expand exact routes, tables, and runtime contracts from code |
 
 ## Phase 0 — Documentation Normalization
@@ -29,21 +29,54 @@ current implementation reality.
 
 **Delivered:**
 
-- 52 unit tests across `queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`,
-  and `flusher.rs`
-- `.github/workflows/ci.yml`, which runs the tests and the document build on
-  every pull request and fails on a stale `doc/TARSYSTEM.md`
-- corrections for six defects the suite exposed, including the two that broke
-  the durability contract
+- 85 Rust unit tests across `queue/jsonl.rs`, `ipc/commands.rs`,
+  `sink/config.rs`, `flusher.rs`, `util/device.rs`, `util/log.rs`, and `main.rs`
+- 22 frontend unit tests across `src/capture.ts` and `src/overlay.ts`, under
+  Vitest, with jsdom for the overlay
+- `.github/workflows/ci.yml`, which builds the frontend, typechecks it, runs
+  both suites and the document build on every pull request, and fails on a
+  stale `doc/TARSYSTEM.md`
+- an operational log under `logs_dir`, bounded and free of capture content,
+  because a write-only tool otherwise has no way to report that delivery
+  stopped
+- corrections for every defect the suite and a close reading exposed. Those
+  that could cost a capture: a flush that could archive an unsent event, a file
+  name a restarted run could take over, a queue that was discarded rather than
+  delivered on reaching its cap, a capture budget that was documented and never
+  implemented, and two paths that cleared text the user had never captured
 
-Section 10 of the system document records what the tests cover and what they
-do not. The uncovered set is the honest starting point for more work here.
+Section 10 of the system document records what the tests cover and what they do
+not. The uncovered set is the honest starting point for more work here.
 
 ## Phase 1 — Exact Surface Expansion
 
 **Goal:** replace baseline placeholders with exact module, API, schema, and
 environment documentation.
 
-This is the remaining phase. The runtime chapters (sections 4 to 6) are now
-exact, because the durability work rewrote them against the code. The
-configuration and command chapters have not had the same treatment.
+This is the remaining phase. The runtime chapters (sections 4 to 6) and the
+error-handling chapter are now exact, because the durability, revert, and
+logging work rewrote them against the code. Section 7 gained a floors table.
+The command reference and the bootstrap appendices have not had the same
+treatment, and `50-operations.md` is still a registry-generated scaffold.
+
+## Governed forward plan
+
+`BDS-TARCIE-BETA-EVIDENCE-v0.1`, in `docs/plans/active/`, proposes what tarcie
+becomes next: a bounded beta-testing observation and evidence assistant that
+packages notes and screenshots as verifiable evidence for Forge_Command review.
+
+That plan set is `proposed` and documentation-only. Board Review 1 is open and
+its next gate is GATE-00, a source lock. It grants no implementation authority,
+and neither does this roadmap. This roadmap covers only the repository's own
+documentation and verification maturity.
+
+**Its recorded source baseline predates this tree.** The plan set pins
+`309a231b0ce9ee7c1de88136d1d07356ffdfe93d`, dated 2026-07-29, and lists "no
+meaningful automated test suite" among tarcie's gaps. Both suites and the CI
+gate landed after that commit, and the plan's open question about whether the
+queue can resend an already delivered batch is now answerable from the code and
+its tests.
+
+GATE-00 asks for exactly that reconciliation. The plan set is under review and
+its supersession rule requires a new reviewed revision for any semantic change,
+so this roadmap records the drift rather than editing the packet.
