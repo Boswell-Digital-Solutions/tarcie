@@ -401,14 +401,23 @@ to a loss.
 ## Cap Rotation
 
 When the queue reaches `DEFAULT_QUEUE_MAX_EVENTS` (10,000 events), the current
-`queue.jsonl` is renamed to:
+`queue.jsonl` moves into `sending/` as:
 
 ```
-queue.cap.{STAMP}.jsonl
+{STAMP}.cap.jsonl
 ```
 
-A fresh `queue.jsonl` is created for new events. This prevents unbounded file
-growth if the sink is unreachable for an extended period.
+A fresh `queue.jsonl` is created for new events. This keeps any one file from
+growing without limit while the sink is unreachable.
+
+The stamp comes first in the name, so a capped batch sorts into place by age
+among the claimed ones. The next claim picks it up and delivers it along with
+everything else.
+
+The capped file used to move into the sent directory instead. No claim reads
+that directory, so every event in a capped file was discarded without a word —
+in the one situation the durable queue exists for. Cap rotation bounds the size
+of a file. It never decides an event is not worth sending.
 
 ## Stamps
 
@@ -795,7 +804,7 @@ The suite covers the seven priority areas:
 |------|--------|--------|
 | Append and read round-trip | `queue/jsonl.rs` | An appended event reads back with its fields intact, and order holds |
 | Tolerant read | `queue/jsonl.rs` | A malformed, truncated, or blank line is skipped; valid events still return |
-| Cap rotation | `queue/jsonl.rs` | An append at the cap rotates the file first, and keeps every capped event |
+| Cap rotation | `queue/jsonl.rs` | An append at the cap rotates the file first, and every capped event still reaches a claim |
 | Content clamping | `ipc/commands.rs` | Oversized content is clamped, not rejected, and stays valid UTF-8 |
 | Tag extraction | `ipc/commands.rs` | `#tag` becomes the context; absent tags fall back to the default |
 | Sink URL validation | `sink/config.rs` | A remote sink is refused unless the operator opts in |
@@ -951,7 +960,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 76 Rust unit tests and 9 frontend unit tests, and a CI
+The repository has 77 Rust unit tests and 9 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -971,6 +980,10 @@ and what they do not.
   window toggle, the shutdown flush, and the DOM wiring do not: the first three
   need a running desktop session, and the fourth needs a DOM in the test run.
   Section 10 lists what stays uncovered.
+- **The queue grows while the sink is unreachable.** Cap rotation bounds the
+  size of one file, not the number of files, and a claim reads every one of
+  them into memory. A sink that stays down therefore costs disk and memory.
+  The contract prefers that to discarding a capture.
 - **A crash between a partial delivery and its archive duplicates the
   remainder.** The undelivered events are written back before the originals are
   archived, so a crash between those two steps offers the remainder again. This

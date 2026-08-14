@@ -19,7 +19,7 @@ The suite covers the seven priority areas:
 |------|--------|--------|
 | Append and read round-trip | `queue/jsonl.rs` | An appended event reads back with its fields intact, and order holds |
 | Tolerant read | `queue/jsonl.rs` | A malformed, truncated, or blank line is skipped; valid events still return |
-| Cap rotation | `queue/jsonl.rs` | An append at the cap rotates the file first, and keeps every capped event |
+| Cap rotation | `queue/jsonl.rs` | An append at the cap rotates the file first, and every capped event still reaches a claim |
 | Content clamping | `ipc/commands.rs` | Oversized content is clamped, not rejected, and stays valid UTF-8 |
 | Tag extraction | `ipc/commands.rs` | `#tag` becomes the context; absent tags fall back to the default |
 | Sink URL validation | `sink/config.rs` | A remote sink is refused unless the operator opts in |

@@ -117,7 +117,7 @@ impl JsonlQueue {
         let _g = self.lock.lock().unwrap();
 
         if self.line_count()? >= queue_max_events {
-            self.rotate_locked("queue.cap")?;
+            self.rotate_at_cap_locked()?;
         }
 
         let json = serde_json::to_string(event).context("serialize event")?;
@@ -220,12 +220,31 @@ impl JsonlQueue {
         Ok(out)
     }
 
-    fn rotate_locked(&self, prefix: &str) -> Result<()> {
+    /// Move the live queue aside once it has reached the cap.
+    ///
+    /// The capped file goes into `sending/`, where the next claim picks it up
+    /// and delivers it. It used to go into the sent directory, which no claim
+    /// reads, so every event in it was discarded without a word — in the one
+    /// situation the durable queue exists for, a sink that has been
+    /// unreachable for a long time.
+    ///
+    /// The name keeps the stamp first, so a capped batch still sorts into
+    /// place by age among the claimed ones.
+    fn rotate_at_cap_locked(&self) -> Result<()> {
         if !self.queue_path.exists() {
             return Ok(());
         }
-        let sent = free_path(&self.sent_path, |s| format!("{prefix}.{s}.jsonl"))?;
-        fs::rename(&self.queue_path, &sent).context("rotate queue file")?;
+
+        let target = free_path(&self.sending_dir, |s| format!("{s}.cap.jsonl"))?;
+        fs::rename(&self.queue_path, &target).context("rotate the capped queue file")?;
+
+        // Reaching the cap means delivery has been failing for a long time.
+        // Nothing else reports that.
+        eprintln!(
+            "tarcie: queue reached its cap, moved to {} to await delivery",
+            target.display()
+        );
+
         Ok(())
     }
 
@@ -466,11 +485,20 @@ mod tests {
         assert_eq!(live.len(), 1, "the live queue restarts after rotation");
         assert_eq!(live[0].content, "overflow");
 
-        let rotated = rotated(&queue);
-        assert_eq!(rotated.len(), 1);
         assert!(
-            rotated[0].file_name().unwrap().to_string_lossy().starts_with("queue.cap."),
-            "cap rotation is labelled distinctly from a successful flush"
+            rotated(&queue).is_empty(),
+            "a capped batch was never sent, so nothing belongs in the sent dir"
+        );
+
+        let pending = queue.sending_files().expect("read the sending dir");
+        assert_eq!(pending.len(), 1, "the capped batch waits for delivery");
+        assert!(
+            pending[0]
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .ends_with(".cap.jsonl"),
+            "cap rotation is labelled distinctly from a claim"
         );
     }
 
@@ -482,11 +510,33 @@ mod tests {
             queue.append(&note(&format!("n{i}")), cap).expect("append");
         }
 
-        let archived = fs::read_to_string(&rotated(&queue)[0]).expect("read rotated file");
+        let pending = queue.sending_files().expect("read the sending dir");
+        let moved = fs::read_to_string(&pending[0]).expect("read the capped file");
         assert_eq!(
-            archived.lines().filter(|l| !l.trim().is_empty()).count(),
+            moved.lines().filter(|l| !l.trim().is_empty()).count(),
             cap,
             "rotation moves the capped events aside rather than discarding them"
+        );
+    }
+
+    #[test]
+    fn a_capped_batch_is_still_delivered() {
+        // The cap is reached when delivery has been failing for a long time,
+        // which is the one situation the durable queue exists for.
+        let (queue, _dir) = temp_queue();
+        let cap = 4;
+        for i in 0..cap {
+            queue.append(&note(&format!("n{i}")), cap).expect("append");
+        }
+        queue.append(&note("overflow"), cap).expect("append past cap");
+
+        let claim = queue.claim().expect("claim");
+        let contents: Vec<String> = claim.events().iter().map(|e| e.content.clone()).collect();
+
+        assert_eq!(
+            contents,
+            ["n0", "n1", "n2", "n3", "overflow"],
+            "every capped event is offered to the sink, oldest first"
         );
     }
 
@@ -497,6 +547,10 @@ mod tests {
             queue.append(&note(&format!("n{i}")), 100).expect("append");
         }
         assert!(rotated(&queue).is_empty());
+        assert!(
+            queue.sending_files().expect("read the sending dir").is_empty(),
+            "nothing moves aside below the cap"
+        );
     }
 
     // --- Claim, complete, defer ------------------------------------------
