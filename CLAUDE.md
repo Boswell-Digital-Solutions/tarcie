@@ -3,8 +3,8 @@
 Friction-free **write-only** capture tool: hotkey overlay → durable queue → HTTP sink. Tauri
 desktop app.
 
-Canonical reference: `doc/system/` → root `SYSTEM.md` (`bash doc/system/BUILD.sh`). `SYSTEM.md` is
-a build artifact; edit the parts, never the artifact.
+Canonical reference: `doc/system/` → `doc/TARSYSTEM.md` (`bash doc/system/BUILD.sh`).
+`doc/TARSYSTEM.md` is a build artifact; edit the parts, never the artifact.
 
 ---
 

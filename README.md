@@ -10,7 +10,7 @@ Built with Tauri v2, Rust, and TypeScript
 
 - **Repo type:** Desktop/local capture tool
 - **Authority boundary:** Fast local note and marker capture with downstream sink handoff; not a resident ecosystem service and not the durable truth store
-- **Deep reference:** `doc/system/_index.md`, `doc/tcSYSTEM.md`, `../docs/canonical/documentation_protocol_v1.md`
+- **Deep reference:** `doc/system/_index.md`, `doc/TARSYSTEM.md`, `../docs/canonical/documentation_protocol_v1.md`
 - **README role:** Product overview and local run entrypoint
 - **Truth note:** Feature lists, version labels, and implementation notes in this README are snapshot facts unless explicitly marked as canonical doctrine or target values
 
@@ -224,7 +224,13 @@ tarcie/
 
 - **JSONL append-only** with atomic fsync per write
 - **Tolerant parsing** — Skips malformed lines, doesn't brick on corruption
-- **Rotate on success** — Moves to `sent/` archive after flush
+- **Claim before delivery** — A flush renames `queue.jsonl` into `sending/`
+  before it posts anything, so an event captured mid-flush lands in a fresh
+  queue and is never archived as sent without being sent
+- **Retry only what is owed** — A flush that fails partway writes back just the
+  undelivered remainder, so an accepted batch is not resent
+- **Crash recovery** — A batch left in `sending/` by an interrupted flush is
+  picked up by the next claim
 - **Growth cap** — Rotates at 10,000 events (configurable)
 
 ### Storage Locations
@@ -237,10 +243,16 @@ tarcie/
 ~/.local/share/tarcie/
 ├── device_id.txt           # Persistent device UUID
 └── queue/
-    ├── queue.jsonl         # Active queue
+    ├── queue.jsonl         # Active queue — appends land here
+    ├── sending/            # Claimed by a flush, awaiting delivery
+    │   └── 20260814T103000Z-000004.jsonl
     └── sent/
-        └── queue.sent.20240115T103000Z.jsonl
+        └── queue.sent.20260814T103000Z-000005.jsonl
 ```
+
+File stamps carry a sequence number after the timestamp. The timestamp resolves
+to the second, so without it two rotations in the same second collide and one
+file is lost.
 
 ---
 
@@ -313,6 +325,13 @@ Authorization: Bearer <token>  # if TARCIE_SINK_AUTH set
 ```bash
 # Development with hot reload
 npm run tauri dev
+
+# Run the tests — needs dist/, so build the frontend first
+npm install && npm run build
+cd src-tauri && cargo test
+
+# Rebuild the system document after changing doc/system/
+bash doc/system/BUILD.sh
 
 # Type check Rust
 cd src-tauri && cargo check
