@@ -23,7 +23,8 @@ Canonical reference: `doc/system/` → `doc/TARSYSTEM.md` (`bash doc/system/BUIL
 
 ```bash
 npm install && npm run build      # creates dist/ — cargo needs it
-cd src-tauri && cargo test        # 76 unit tests
+npm run check && npm test         # tsc --noEmit, then 9 frontend tests
+cd src-tauri && cargo test        # 76 Rust unit tests
 ```
 
 **`cargo test` fails without `dist/`.** `tauri::generate_context!` reads the

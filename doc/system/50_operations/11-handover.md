@@ -11,8 +11,9 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 76 unit tests and a CI workflow that runs them on every
-pull request. Section 10 lists what they cover and what they do not.
+The repository has 76 Rust unit tests and 9 frontend unit tests, and a CI
+workflow that runs both on every pull request. Section 10 lists what they cover
+and what they do not.
 
 ## Critical Constraints (Do Not Violate)
 
@@ -26,9 +27,10 @@ pull request. Section 10 lists what they cover and what they do not.
 
 - **Test coverage is unit-level only.** The seven priority areas in section 10
   have tests, and so do the command layer, device-ID persistence, the name
-  guard, and the hotkey string. Hotkey registration, the window toggle, and the
-  shutdown flush do not: all three need a running desktop session. Section 10
-  lists what stays uncovered.
+  guard, the hotkey string, and the capture revert. Hotkey registration, the
+  window toggle, the shutdown flush, and the DOM wiring do not: the first three
+  need a running desktop session, and the fourth needs a DOM in the test run.
+  Section 10 lists what stays uncovered.
 - **A crash between a partial delivery and its archive duplicates the
   remainder.** The undelivered events are written back before the originals are
   archived, so a crash between those two steps offers the remainder again. This
@@ -53,6 +55,10 @@ cd src-tauri && cargo tauri dev
 # Run the tests (needs dist/ — run `npm run build` first)
 cd src-tauri && cargo test
 
+# Run the frontend tests and typecheck
+npm test
+npm run check
+
 # Check types
 cd src-tauri && cargo check
 
@@ -70,7 +76,7 @@ export TARCIE_BATCH_MAX=50
 | Item | Path |
 |------|------|
 | Rust source | `src-tauri/src/` |
-| Frontend | `src/` (main.ts, styles.css, index.html) |
+| Frontend | `src/` (main.ts, capture.ts, styles.css, index.html) |
 | Frontend bundle | `dist/` (built by `npm run build`; `cargo` needs it) |
 | Cargo manifest | `src-tauri/Cargo.toml` |
 | Tauri config | `src-tauri/tauri.conf.json` |
