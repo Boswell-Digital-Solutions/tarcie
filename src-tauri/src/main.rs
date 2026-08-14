@@ -8,6 +8,8 @@ mod model;
 mod queue;
 mod sink;
 mod state;
+#[cfg(test)]
+mod test_sink;
 mod util;
 
 use crate::constraints::*;
@@ -15,27 +17,11 @@ use crate::queue::jsonl::JsonlQueue;
 use crate::sink::client::SinkClient;
 use crate::sink::config::SinkConfig;
 use crate::state::AppState;
+use crate::util::device::load_or_create_device_id;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Manager, WebviewWindow};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
-use uuid::Uuid;
-
-fn load_or_create_device_id() -> anyhow::Result<Uuid> {
-    use crate::util::paths::device_id_path;
-    use std::fs;
-
-    let path = device_id_path()?;
-    if let Ok(s) = fs::read_to_string(&path) {
-        if let Ok(id) = Uuid::parse_str(s.trim()) {
-            return Ok(id);
-        }
-    }
-    let id = Uuid::new_v4();
-    fs::create_dir_all(path.parent().unwrap())?;
-    fs::write(&path, id.to_string())?;
-    Ok(id)
-}
 
 fn toggle_window(window: &WebviewWindow) {
     let visible = window.is_visible().unwrap_or(false);
