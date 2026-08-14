@@ -13,6 +13,11 @@ pub const MAX_TAG_CHARS: usize = 32;
 pub const MAX_CONTENT_BYTES: usize = 10 * 1024; // 10KB
 
 pub const DEFAULT_FLUSH_INTERVAL_SECS: u64 = 300;
+
+// tokio::time::interval panics on a zero period. That panic lands in the
+// spawned flush task, where nothing reports it, so the background flusher
+// would be gone for the rest of the session without a word.
+pub const MIN_FLUSH_INTERVAL_SECS: u64 = 1;
 pub const DEFAULT_BATCH_MAX: usize = 200;
 pub const DEFAULT_QUEUE_MAX_EVENTS: usize = 10_000;
 

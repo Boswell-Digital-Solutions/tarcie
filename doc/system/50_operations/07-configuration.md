@@ -13,6 +13,20 @@ All configuration is via environment variables. There is no config file. Default
 | `TARCIE_BATCH_MAX` | `200` | Maximum events per HTTP POST batch |
 | `TARCIE_QUEUE_MAX_EVENTS` | `10000` | Queue cap -- triggers rotation when reached |
 
+## Floors
+
+Three of the numeric settings are floored at the smallest value that still
+works, because a value below the floor disables the thing it configures:
+
+| Variable | Floor | Below it |
+|----------|-------|----------|
+| `TARCIE_FLUSH_INTERVAL_SECS` | `1` | `tokio::time::interval` panics on a zero period, in the spawned flush task where nothing reports it |
+| `TARCIE_BATCH_MAX` | `1` | A zero batch never drains the queue |
+| `TARCIE_QUEUE_MAX_EVENTS` | `100` | A cap this low rotates on almost every append |
+
+An unparsable value is not an error. It falls back to the default, so a typo
+costs the override and not the launch.
+
 ## Localhost-Only Default
 
 By default, `TARCIE_ALLOW_REMOTE_SINK` is `false`. This means the sink URL must resolve to `127.0.0.1` or `localhost`. Any attempt to configure a remote sink URL without explicitly setting `TARCIE_ALLOW_REMOTE_SINK=true` will be rejected at startup.

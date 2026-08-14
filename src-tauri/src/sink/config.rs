@@ -68,7 +68,7 @@ impl SinkConfig {
             url,
             auth,
             allow_remote,
-            flush_interval_secs,
+            flush_interval_secs: flush_interval_secs.max(MIN_FLUSH_INTERVAL_SECS),
             batch_max: batch_max.max(1),
             queue_max_events: queue_max_events.max(100),
         })
@@ -228,6 +228,20 @@ mod tests {
 
         assert_eq!(cfg.batch_max, 1, "a zero batch would never drain the queue");
         assert_eq!(cfg.queue_max_events, 100);
+    }
+
+    #[test]
+    fn a_zero_flush_interval_is_floored_at_a_workable_value() {
+        // tokio::time::interval panics on a zero period. The panic lands in
+        // the spawned flush task, where nothing reports it, so the background
+        // flusher would be gone for the rest of the session.
+        let cfg = SinkConfig::resolve(vars(&[("TARCIE_FLUSH_INTERVAL_SECS", "0")]))
+            .expect("config resolves");
+
+        assert_eq!(
+            cfg.flush_interval_secs, MIN_FLUSH_INTERVAL_SECS,
+            "a zero interval would take the background flusher down"
+        );
     }
 
     #[test]

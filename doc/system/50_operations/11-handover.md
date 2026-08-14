@@ -11,7 +11,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 77 Rust unit tests and 9 frontend unit tests, and a CI
+The repository has 78 Rust unit tests and 9 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
