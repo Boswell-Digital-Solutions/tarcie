@@ -2,9 +2,16 @@
 
 ## Current State
 
-Tarcie has a unit test suite. The tests live beside the code they cover, in
-`#[cfg(test)]` modules in `queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`,
-`flusher.rs`, and `util/device.rs`.
+Tarcie has a Rust unit test suite and a frontend unit test suite.
+
+The Rust tests live beside the code they cover, in `#[cfg(test)]` modules in
+`queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`, `flusher.rs`,
+`util/device.rs`, and `main.rs`.
+
+The frontend tests live in `src/capture.test.ts` and run under Vitest. They
+cover `src/capture.ts`, which holds the capture flow apart from the DOM and
+from Tauri: the five-second revert of constraint 1, and the rule that only a
+confirmed capture clears the box.
 
 The suite covers the seven priority areas:
 
@@ -26,6 +33,8 @@ The suite also covers these areas:
 | Device identity | `util/device.rs` | The ID is minted once, read back on every run after, and replaced when the file is damaged |
 | Name reuse after a crash | `queue/jsonl.rs` | A name an earlier run left behind is never taken over, and an exhausted search fails instead of overwriting |
 | The hotkey binding | `main.rs` | The documented `HOTKEY` string parses, and it names the combination that gets registered |
+| The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
+| Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes, hides the overlay, and clears the box |
 
 Each command needs a Tauri `State`, which a test cannot supply. Each one
 therefore delegates to a function over a plain `&AppState` — `capture_note_into`,
@@ -40,6 +49,10 @@ gives the queue the same seam.
 `free_path` takes the name generator as an argument. A test can therefore offer
 a name that is already on disk, which is what a restarted sequence does, and
 hold the guard to leaving that file alone.
+
+`runCapture` takes the send and the budget as arguments, so a test drives both
+with a fake clock and never waits five real seconds. `src/main.ts` keeps only
+the DOM wiring, which no test covers.
 
 Every test asserts intended behavior. No test currently pins a known
 deviation.
@@ -71,7 +84,12 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
 
 `.github/workflows/ci.yml` runs on every pull request and on a push to `main`.
 It installs the system libraries, runs `npm ci` and `npm run build`, runs
-`cargo test`, and then runs `bash doc/system/BUILD.sh`.
+`npm run check` and `npm test`, runs `cargo test`, and then runs
+`bash doc/system/BUILD.sh`.
+
+`npm run check` is `tsc --noEmit`. Vite builds with esbuild, which strips the
+types without checking them, so nothing enforced the strict settings in
+`tsconfig.json` before this step existed.
 
 The final step runs `git diff --exit-code doc/TARSYSTEM.md`. A change under
 `doc/system/` that ships without a rebuild fails the job.
@@ -96,7 +114,12 @@ This launches the Tauri development server with hot-reload for the frontend.
 
 ```bash
 cd src-tauri
-cargo test
+cargo test        # the Rust suite
+```
+
+```bash
+npm test          # the frontend suite
+npm run check     # tsc --noEmit
 ```
 
 ## Type Checking
@@ -132,3 +155,7 @@ These areas have no tests:
    desktop session. The hotkey *string* is covered: a test proves `HOTKEY`
    parses and names the combination the code registers. Whether the operating
    system then grants that combination is not covered.
+5. **The DOM wiring in `src/main.ts`.** The decisions it acts on live in
+   `src/capture.ts` and have tests. That the key handler, the marker button,
+   and the flash are wired to them is verified by reading. Covering the wiring
+   needs a DOM in the test run, which the suite does not carry.

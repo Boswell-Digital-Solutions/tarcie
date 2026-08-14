@@ -547,6 +547,14 @@ This is intentional: data durability of valid events is prioritized over strict 
 
 Tarcie does not fail loudly to the user. Capture must feel instant and invisible. Errors are logged internally but the overlay never shows error dialogs or failure states. If a capture fails, the 5-second revert constraint ensures the user is not blocked.
 
+`effectFor` in `src/capture.ts` holds that line. Only a confirmed capture
+flashes, hides the overlay, and clears the box. A refusal and a timeout change
+nothing on screen: the overlay stays open, holding the text, and says nothing
+about what happened. The window that did not go away is the whole signal.
+
+The text on screen is also the only copy anyone can point to when a capture is
+unproven, which is the second reason an unconfirmed capture never clears it.
+
 ---
 
 # Runtime
@@ -713,13 +721,25 @@ All config is read in `sink/config.rs` and assembled into a `SinkConfig` struct 
 
 # 8. Constraints
 
-All v1 constraints are hardcoded in `constraints.rs`. They are non-negotiable.
+Rules 2 to 5 are hardcoded in `constraints.rs`. Rule 1 is a promise about what
+the user experiences, so the overlay keeps it: `CAPTURE_TIMEOUT_MS` lives in
+`src/capture.ts`. All five are non-negotiable.
 
 ## The Five Rules
 
 ### 1. Capture Latency: 5-Second Revert
 
 If any capture operation (note or marker) takes longer than 5 seconds, the operation must revert. The user must never be blocked waiting for a capture to complete. This protects the "friction-free" guarantee -- if the queue is broken, the user should not notice.
+
+`runCapture` in `src/capture.ts` races the command against
+`CAPTURE_TIMEOUT_MS`. When the budget runs out the overlay stops waiting and
+the outcome is `unconfirmed` — not a failure, because the queue may hold the
+event after all. The overlay then says nothing and keeps the text, per section
+9.
+
+A late reply is ignored. Without the revert, a command that answered a minute
+later still confirmed, hid the window, and cleared the box — over whatever the
+user had typed since.
 
 ### 2. Write-Only (No Readback)
 
@@ -758,9 +778,16 @@ All defined in `constraints.rs`:
 
 ## Current State
 
-Tarcie has a unit test suite. The tests live beside the code they cover, in
-`#[cfg(test)]` modules in `queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`,
-`flusher.rs`, and `util/device.rs`.
+Tarcie has a Rust unit test suite and a frontend unit test suite.
+
+The Rust tests live beside the code they cover, in `#[cfg(test)]` modules in
+`queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`, `flusher.rs`,
+`util/device.rs`, and `main.rs`.
+
+The frontend tests live in `src/capture.test.ts` and run under Vitest. They
+cover `src/capture.ts`, which holds the capture flow apart from the DOM and
+from Tauri: the five-second revert of constraint 1, and the rule that only a
+confirmed capture clears the box.
 
 The suite covers the seven priority areas:
 
@@ -782,6 +809,8 @@ The suite also covers these areas:
 | Device identity | `util/device.rs` | The ID is minted once, read back on every run after, and replaced when the file is damaged |
 | Name reuse after a crash | `queue/jsonl.rs` | A name an earlier run left behind is never taken over, and an exhausted search fails instead of overwriting |
 | The hotkey binding | `main.rs` | The documented `HOTKEY` string parses, and it names the combination that gets registered |
+| The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
+| Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes, hides the overlay, and clears the box |
 
 Each command needs a Tauri `State`, which a test cannot supply. Each one
 therefore delegates to a function over a plain `&AppState` — `capture_note_into`,
@@ -796,6 +825,10 @@ gives the queue the same seam.
 `free_path` takes the name generator as an argument. A test can therefore offer
 a name that is already on disk, which is what a restarted sequence does, and
 hold the guard to leaving that file alone.
+
+`runCapture` takes the send and the budget as arguments, so a test drives both
+with a fake clock and never waits five real seconds. `src/main.ts` keeps only
+the DOM wiring, which no test covers.
 
 Every test asserts intended behavior. No test currently pins a known
 deviation.
@@ -827,7 +860,12 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
 
 `.github/workflows/ci.yml` runs on every pull request and on a push to `main`.
 It installs the system libraries, runs `npm ci` and `npm run build`, runs
-`cargo test`, and then runs `bash doc/system/BUILD.sh`.
+`npm run check` and `npm test`, runs `cargo test`, and then runs
+`bash doc/system/BUILD.sh`.
+
+`npm run check` is `tsc --noEmit`. Vite builds with esbuild, which strips the
+types without checking them, so nothing enforced the strict settings in
+`tsconfig.json` before this step existed.
 
 The final step runs `git diff --exit-code doc/TARSYSTEM.md`. A change under
 `doc/system/` that ships without a rebuild fails the job.
@@ -852,7 +890,12 @@ This launches the Tauri development server with hot-reload for the frontend.
 
 ```bash
 cd src-tauri
-cargo test
+cargo test        # the Rust suite
+```
+
+```bash
+npm test          # the frontend suite
+npm run check     # tsc --noEmit
 ```
 
 ## Type Checking
@@ -888,6 +931,10 @@ These areas have no tests:
    desktop session. The hotkey *string* is covered: a test proves `HOTKEY`
    parses and names the combination the code registers. Whether the operating
    system then grants that combination is not covered.
+5. **The DOM wiring in `src/main.ts`.** The decisions it acts on live in
+   `src/capture.ts` and have tests. That the key handler, the marker button,
+   and the flash are wired to them is verified by reading. Covering the wiring
+   needs a DOM in the test run, which the suite does not carry.
 
 ---
 
@@ -904,8 +951,9 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 76 unit tests and a CI workflow that runs them on every
-pull request. Section 10 lists what they cover and what they do not.
+The repository has 76 Rust unit tests and 9 frontend unit tests, and a CI
+workflow that runs both on every pull request. Section 10 lists what they cover
+and what they do not.
 
 ## Critical Constraints (Do Not Violate)
 
@@ -919,9 +967,10 @@ pull request. Section 10 lists what they cover and what they do not.
 
 - **Test coverage is unit-level only.** The seven priority areas in section 10
   have tests, and so do the command layer, device-ID persistence, the name
-  guard, and the hotkey string. Hotkey registration, the window toggle, and the
-  shutdown flush do not: all three need a running desktop session. Section 10
-  lists what stays uncovered.
+  guard, the hotkey string, and the capture revert. Hotkey registration, the
+  window toggle, the shutdown flush, and the DOM wiring do not: the first three
+  need a running desktop session, and the fourth needs a DOM in the test run.
+  Section 10 lists what stays uncovered.
 - **A crash between a partial delivery and its archive duplicates the
   remainder.** The undelivered events are written back before the originals are
   archived, so a crash between those two steps offers the remainder again. This
@@ -946,6 +995,10 @@ cd src-tauri && cargo tauri dev
 # Run the tests (needs dist/ — run `npm run build` first)
 cd src-tauri && cargo test
 
+# Run the frontend tests and typecheck
+npm test
+npm run check
+
 # Check types
 cd src-tauri && cargo check
 
@@ -963,7 +1016,7 @@ export TARCIE_BATCH_MAX=50
 | Item | Path |
 |------|------|
 | Rust source | `src-tauri/src/` |
-| Frontend | `src/` (main.ts, styles.css, index.html) |
+| Frontend | `src/` (main.ts, capture.ts, styles.css, index.html) |
 | Frontend bundle | `dist/` (built by `npm run build`; `cargo` needs it) |
 | Cargo manifest | `src-tauri/Cargo.toml` |
 | Tauri config | `src-tauri/tauri.conf.json` |

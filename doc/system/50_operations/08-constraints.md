@@ -1,12 +1,24 @@
 # 8. Constraints
 
-All v1 constraints are hardcoded in `constraints.rs`. They are non-negotiable.
+Rules 2 to 5 are hardcoded in `constraints.rs`. Rule 1 is a promise about what
+the user experiences, so the overlay keeps it: `CAPTURE_TIMEOUT_MS` lives in
+`src/capture.ts`. All five are non-negotiable.
 
 ## The Five Rules
 
 ### 1. Capture Latency: 5-Second Revert
 
 If any capture operation (note or marker) takes longer than 5 seconds, the operation must revert. The user must never be blocked waiting for a capture to complete. This protects the "friction-free" guarantee -- if the queue is broken, the user should not notice.
+
+`runCapture` in `src/capture.ts` races the command against
+`CAPTURE_TIMEOUT_MS`. When the budget runs out the overlay stops waiting and
+the outcome is `unconfirmed` — not a failure, because the queue may hold the
+event after all. The overlay then says nothing and keeps the text, per section
+9.
+
+A late reply is ignored. Without the revert, a command that answered a minute
+later still confirmed, hid the window, and cleared the box — over whatever the
+user had typed since.
 
 ### 2. Write-Only (No Readback)
 

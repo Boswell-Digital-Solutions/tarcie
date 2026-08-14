@@ -46,6 +46,14 @@ jobs:
       - name: Build the frontend bundle
         run: npm run build
 
+      # vite builds with esbuild, which strips types without checking them.
+      # Nothing enforces tsconfig's strict settings without this step.
+      - name: Check the frontend types
+        run: npm run check
+
+      - name: Run the frontend tests
+        run: npm test
+
       - name: Cache cargo registry and build output
         uses: actions/cache@v4
         with:
