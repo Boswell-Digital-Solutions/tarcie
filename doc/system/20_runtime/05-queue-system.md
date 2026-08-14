@@ -56,14 +56,23 @@ to a loss.
 ## Cap Rotation
 
 When the queue reaches `DEFAULT_QUEUE_MAX_EVENTS` (10,000 events), the current
-`queue.jsonl` is renamed to:
+`queue.jsonl` moves into `sending/` as:
 
 ```
-queue.cap.{STAMP}.jsonl
+{STAMP}.cap.jsonl
 ```
 
-A fresh `queue.jsonl` is created for new events. This prevents unbounded file
-growth if the sink is unreachable for an extended period.
+A fresh `queue.jsonl` is created for new events. This keeps any one file from
+growing without limit while the sink is unreachable.
+
+The stamp comes first in the name, so a capped batch sorts into place by age
+among the claimed ones. The next claim picks it up and delivers it along with
+everything else.
+
+The capped file used to move into the sent directory instead. No claim reads
+that directory, so every event in a capped file was discarded without a word —
+in the one situation the durable queue exists for. Cap rotation bounds the size
+of a file. It never decides an event is not worth sending.
 
 ## Stamps
 
