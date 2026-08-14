@@ -8,10 +8,15 @@ The Rust tests live beside the code they cover, in `#[cfg(test)]` modules in
 `queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`, `flusher.rs`,
 `util/device.rs`, `util/log.rs`, and `main.rs`.
 
-The frontend tests live in `src/capture.test.ts` and run under Vitest. They
-cover `src/capture.ts`, which holds the capture flow apart from the DOM and
-from Tauri: the five-second revert of constraint 1, and the rule that only a
-confirmed capture clears the box.
+The frontend tests run under Vitest and live beside the code they cover:
+
+- `src/capture.test.ts` covers `src/capture.ts`, which holds the capture flow
+  apart from the DOM and from Tauri — the five-second revert of constraint 1,
+  and the rule that only a confirmed capture clears the box. It runs in the
+  `node` environment, which is also a check that `capture.ts` needs no DOM.
+- `src/overlay.test.ts` covers `src/overlay.ts`, the wiring from a keyboard, a
+  button, and a window to those decisions. It declares
+  `// @vitest-environment jsdom` at the top of the file.
 
 The suite covers the seven priority areas:
 
@@ -36,6 +41,8 @@ The suite also covers these areas:
 | The log | `util/log.rs` | A report reaches the file stamped, the file rotates at its ceiling and keeps one previous, an over-long line is shortened, and a log that cannot be written does not take the caller down |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
 | Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes, hides the overlay, and clears the box |
+| The overlay wiring | `src/overlay.ts` | Enter sends what was on screen, Escape puts the overlay away without capturing, the marker button captures with no reason, and the overlay arrives focused |
+| Text the user has not lost | `src/overlay.ts` | A refusal and a timeout both leave the box and the window alone, and a reply arriving after the revert never takes text typed since |
 
 Each command needs a Tauri `State`, which a test cannot supply. Each one
 therefore delegates to a function over a plain `&AppState` — `capture_note_into`,
@@ -52,22 +59,37 @@ a name that is already on disk, which is what a restarted sequence does, and
 hold the guard to leaving that file alone.
 
 `runCapture` takes the send and the budget as arguments, so a test drives both
-with a fake clock and never waits five real seconds. `src/main.ts` keeps only
-the DOM wiring, which no test covers.
+with a fake clock and never waits five real seconds.
+
+`wireOverlay` takes its ports as an argument: the four elements, the invoke
+call, and the window's hide. `src/main.ts` supplies the real ones; a test
+supplies a document it built and calls it can drive. `src/main.ts` is then
+bootstrap only.
 
 `LogFile::with_ceiling` takes the size ceiling directly, so a test proves the
 rotation without writing a megabyte to do it. The tests build a `LogFile` in a
 temporary directory and never call `log::init_in`, so the process-wide log stays
 closed and nothing in the suite writes to the real user profile.
 
-Every test asserts intended behavior. No test currently pins a known
-deviation.
+Every test asserts intended behavior, with one exception.
 
-If a future test must record behavior that differs from the documented intent,
-mark it with a `KNOWN DEVIATION` comment that states the deviation. A fix must
-change that test in the same commit.
+**One `KNOWN DEVIATION` stands.** `src/overlay.test.ts` records that a marker
+clears a note the user typed and never captured. The marker button is a
+separate action, but a confirmed capture of any kind clears the box, so
+clicking it erases un-captured text and closes the window over it. Everywhere
+else the overlay treats that text as the only copy anyone has. The test states
+the deviation and holds the behaviour as it stands.
+
+A test that must record behavior differing from the documented intent is marked
+with a `KNOWN DEVIATION` comment that states the deviation. A fix must change
+that test in the same commit.
 
 ## Prerequisites
+
+**Node 22.22.2 or later**, as `package.json` declares. jsdom 30 needs it: on
+Node 20 its undici dependency reaches for `webidl` internals that are not there
+yet, and the overlay suite dies on import rather than failing a test. CI pins
+the same version.
 
 `cargo test` builds the full Tauri binary, so it needs the frontend bundle and
 the Linux system libraries.
@@ -161,7 +183,7 @@ These areas have no tests:
    desktop session. The hotkey *string* is covered: a test proves `HOTKEY`
    parses and names the combination the code registers. Whether the operating
    system then grants that combination is not covered.
-5. **The DOM wiring in `src/main.ts`.** The decisions it acts on live in
-   `src/capture.ts` and have tests. That the key handler, the marker button,
-   and the flash are wired to them is verified by reading. Covering the wiring
-   needs a DOM in the test run, which the suite does not carry.
+5. **The bootstrap in `src/main.ts`.** It finds the four elements and hands
+   `wireOverlay` the real Tauri calls, and does nothing else. Reaching it needs
+   a running webview, because `@tauri-apps/api` only resolves inside one. The
+   wiring it hands over is covered in `src/overlay.test.ts`.

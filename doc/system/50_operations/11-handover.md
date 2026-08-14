@@ -11,7 +11,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 85 Rust unit tests and 9 frontend unit tests, and a CI
+The repository has 85 Rust unit tests and 19 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -31,6 +31,12 @@ and what they do not.
   window toggle, the shutdown flush, and the DOM wiring do not: the first three
   need a running desktop session, and the fourth needs a DOM in the test run.
   Section 10 lists what stays uncovered.
+- **A marker clears a note the user never captured.** The marker button is a
+  separate action, but a confirmed capture of any kind clears the box, so
+  clicking it erases un-captured text and closes the window over it. Everywhere
+  else the overlay treats that text as the only copy anyone has. A
+  `KNOWN DEVIATION` test in `src/overlay.test.ts` holds the behaviour as it
+  stands; changing it is a product decision, not a bug fix.
 - **The queue grows while the sink is unreachable.** Cap rotation bounds the
   size of one file, not the number of files, and a claim reads every one of
   them into memory. A sink that stays down therefore costs disk and memory.
@@ -80,7 +86,7 @@ export TARCIE_BATCH_MAX=50
 | Item | Path |
 |------|------|
 | Rust source | `src-tauri/src/` |
-| Frontend | `src/` (main.ts, capture.ts, styles.css, index.html) |
+| Frontend | `src/` (main.ts, overlay.ts, capture.ts, styles.css, index.html) |
 | Frontend bundle | `dist/` (built by `npm run build`; `cargo` needs it) |
 | Cargo manifest | `src-tauri/Cargo.toml` |
 | Tauri config | `src-tauri/tauri.conf.json` |
