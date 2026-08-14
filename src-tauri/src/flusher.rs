@@ -57,7 +57,13 @@ impl Flusher {
                 match self.post_chunk(chunk).await {
                     Ok(()) => delivered += chunk.len(),
                     Err(e) => {
-                        failure = Some(e.to_string());
+                        // The whole chain, not just the outermost context.
+                        // `anyhow`'s plain `Display` prints only the context a
+                        // caller added, so a refused connection reported itself
+                        // as "POST to sink" — the attempt, never the cause. The
+                        // reason reaches the log, and the log is all tarcie has
+                        // to say that delivery has stopped.
+                        failure = Some(format!("{e:#}"));
                         break;
                     }
                 }
@@ -218,6 +224,27 @@ mod tests {
 
         // The reliability contract: an unreachable sink never costs a capture.
         assert_eq!(still_owed(&queue), ["keep me"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_deferral_names_the_cause_and_not_only_the_attempt() {
+        // The reason is the whole account of why delivery stopped. It goes to
+        // the log, and tarcie has no other way to say it. "POST to sink" names
+        // what was tried, not what went wrong, so the reason carries the chain
+        // under it.
+        let (queue, _dir) = temp_queue();
+        queue.append(&note("keep me"), 1000).expect("append");
+
+        let flusher = flusher_for(UNREACHABLE, Arc::clone(&queue));
+
+        match flusher.flush_with_retry().await.expect("flush") {
+            FlushResult::Deferred { reason } => assert!(
+                reason.to_lowercase().contains("connect"),
+                "the reason names the connection failure, got: {reason}"
+            ),
+            FlushResult::Empty => panic!("expected deferral, got empty"),
+            FlushResult::Success { .. } => panic!("expected deferral, got success"),
+        }
     }
 
     #[tokio::test(start_paused = true)]
