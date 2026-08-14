@@ -19,14 +19,13 @@ All modules implemented: IPC commands, JSONL queue, HTTP sink client, background
 - **Test coverage is unit-level only.** The seven priority areas in section 10
   have tests. The Tauri command layer, the hotkey, and device-ID persistence do
   not. Section 10 lists what stays uncovered.
-- **A flush can file an unsent capture as sent.** The flusher reads the queue,
-  posts it, and then rotates the file. An append between the read and the
-  rotate goes to `queue.sent.*` without being transmitted.
-- **A multi-batch flush can send a batch twice.** If an early batch succeeds
-  and a later one fails, the flush defers without rotating, so the succeeded
-  batch is posted again on the next cycle.
-- **Rotation file names resolve to the second.** Two rotations within one
-  second overwrite each other.
+- **A crash between a partial delivery and its archive duplicates the
+  remainder.** The undelivered events are written back before the originals are
+  archived, so a crash between those two steps offers the remainder again. This
+  is deliberate: the contract prefers a duplicate to a loss.
+- **Duplicate delivery is possible in general.** The sink is not asked whether
+  it already holds an event, so any retry after an unacknowledged success sends
+  it again. Deduplication belongs downstream, on `id`.
 - **Monotonic clock resets on restart.** `timestamp_mono_ms` is relative to session start. Cross-session ordering relies on `timestamp_utc` only.
 - **Platform paths.** Uses the `directories` crate for queue file location. Windows IPC path edge cases have not been tested.
 - **No retry persistence.** If the application is killed during a flush, partial state depends on whether the queue rotation completed. The tolerant reader handles most corruption cases.

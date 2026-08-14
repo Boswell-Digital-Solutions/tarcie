@@ -372,27 +372,52 @@ The queue reader is tolerant of malformed lines:
 
 This ensures a single corrupted event never blocks the entire queue.
 
-## Rotation
+## Claim
 
-### Cap Rotation
+A flush does not read the live queue and delete it afterwards. It **claims**
+the queue first: `queue.jsonl` is renamed into `sending/` under the same lock
+that guards `append`.
 
-When the queue reaches `DEFAULT_QUEUE_MAX_EVENTS` (10,000 events), the current `queue.jsonl` is renamed to:
+The rename is the handoff. An event captured while a flush is in flight lands
+in a fresh `queue.jsonl` and is never part of the claim, so it cannot be
+archived as sent without being sent.
+
+A claim also picks up every file already in `sending/`, oldest first. A flush
+that was interrupted leaves its batch there, and the next claim recovers it.
+The cost of a crash is a retry, not a capture.
+
+The claim ends one of two ways:
+
+- **Complete.** Every event reached the sink. Each claim file is renamed to
+  `queue.sent.{STAMP}.jsonl` in the sent directory.
+- **Defer.** Only the first *n* events reached the sink. The remainder is
+  written back into `sending/` and the originals are archived. The next flush
+  retries what is still owed and does not resend what the sink accepted.
+
+If the process dies between writing the remainder and archiving the originals,
+the remainder is delivered twice. The reliability contract prefers a duplicate
+to a loss.
+
+## Cap Rotation
+
+When the queue reaches `DEFAULT_QUEUE_MAX_EVENTS` (10,000 events), the current
+`queue.jsonl` is renamed to:
 
 ```
-queue.cap.{TIMESTAMP}.jsonl
+queue.cap.{STAMP}.jsonl
 ```
 
-A fresh `queue.jsonl` is created for new events. This prevents unbounded file growth if the sink is unreachable for an extended period.
+A fresh `queue.jsonl` is created for new events. This prevents unbounded file
+growth if the sink is unreachable for an extended period.
 
-### Success Rotation
+## Stamps
 
-After a successful flush, the queue file is renamed to:
+`{STAMP}` is a UTC timestamp to the second followed by a per-process sequence
+number, for example `20260814T033500Z-000004`.
 
-```
-queue.sent.{TIMESTAMP}.jsonl
-```
-
-This preserves a local record of sent events while clearing the active queue.
+The sequence number is not decoration. The timestamp alone resolves to the
+second, so two rotations within one second produced the same name and the
+second rename destroyed the first file.
 
 ## Capacity
 
@@ -412,13 +437,23 @@ The flusher is a background task that periodically drains the JSONL queue and po
 
 1. Sleep for `TARCIE_FLUSH_INTERVAL_SECS` (default: 300 seconds)
 2. Acquire the flush Mutex
-3. Read all events from `queue.jsonl` (tolerant read)
-4. If queue is empty, release lock and return to step 1
-5. Chunk events into batches of `DEFAULT_BATCH_MAX` (200)
-6. POST each batch to the sink endpoint
-7. On success: rotate queue file to `queue.sent.TIMESTAMP.jsonl`
-8. On failure after retries: return `Deferred` (events stay in queue for next cycle)
+3. **Claim** the queue — `queue.jsonl` moves into `sending/`, and any batch left
+   by an interrupted flush is picked up with it
+4. If the claim is empty, archive its files and return to step 1
+5. Chunk the claimed events into batches of `DEFAULT_BATCH_MAX` (200)
+6. POST each batch to the sink endpoint, counting what is accepted
+7. On full success: archive the claim to `queue.sent.{STAMP}.jsonl`
+8. On failure partway: **defer** — write the undelivered remainder back to
+   `sending/`, archive the originals, and return `Deferred`
 9. Release lock, return to step 1
+
+Step 3 is what keeps a capture safe. The queue is moved aside before anything
+is posted, so an event captured during delivery is not in the claim and cannot
+be archived as sent.
+
+Step 8 is what keeps delivery honest. A flush that accepted three batches and
+failed on the fourth retries only the fourth; the three the sink already holds
+are not offered again.
 
 ## Batch Payload
 
@@ -807,16 +842,15 @@ The seven priority areas are covered. These areas are not:
 1. **The Tauri command layer.** `capture_note`, `capture_marker`, and
    `flush_now` need a Tauri `State`, so the tests cover the logic they call
    instead of the commands themselves.
-2. **Concurrent append during a flush.** The flusher reads, posts, and then
-   rotates. An append between the read and the rotate is filed as sent. No
-   test covers this window yet.
-3. **Multi-batch flush.** A flush that succeeds on one batch and fails on a
-   later one re-sends the succeeded batch on the next cycle.
-4. **Rotation timestamp collisions.** Rotation names files to the second. Two
-   rotations in one second overwrite each other.
-5. **The global hotkey and window toggle.** These need a running desktop
+2. **The mid-flush capture window at the flusher level.** The window itself is
+   covered in `queue::jsonl`, where an append can be placed between the claim
+   and the completion. A flusher test cannot reach inside `flush_with_retry`
+   to do that, so no end-to-end version exists.
+3. **A crash between a partial delivery and its archive.** The duplicate this
+   produces is documented, not tested; it needs process-level fault injection.
+4. **The global hotkey and window toggle.** These need a running desktop
    session.
-6. **Device ID persistence.** `load_or_create_device_id` writes to the real
+5. **Device ID persistence.** `load_or_create_device_id` writes to the real
    user profile and has no path seam.
 
 ---
@@ -842,14 +876,13 @@ All modules implemented: IPC commands, JSONL queue, HTTP sink client, background
 - **Test coverage is unit-level only.** The seven priority areas in section 10
   have tests. The Tauri command layer, the hotkey, and device-ID persistence do
   not. Section 10 lists what stays uncovered.
-- **A flush can file an unsent capture as sent.** The flusher reads the queue,
-  posts it, and then rotates the file. An append between the read and the
-  rotate goes to `queue.sent.*` without being transmitted.
-- **A multi-batch flush can send a batch twice.** If an early batch succeeds
-  and a later one fails, the flush defers without rotating, so the succeeded
-  batch is posted again on the next cycle.
-- **Rotation file names resolve to the second.** Two rotations within one
-  second overwrite each other.
+- **A crash between a partial delivery and its archive duplicates the
+  remainder.** The undelivered events are written back before the originals are
+  archived, so a crash between those two steps offers the remainder again. This
+  is deliberate: the contract prefers a duplicate to a loss.
+- **Duplicate delivery is possible in general.** The sink is not asked whether
+  it already holds an event, so any retry after an unacknowledged success sends
+  it again. Deduplication belongs downstream, on `id`.
 - **Monotonic clock resets on restart.** `timestamp_mono_ms` is relative to session start. Cross-session ordering relies on `timestamp_utc` only.
 - **Platform paths.** Uses the `directories` crate for queue file location. Windows IPC path edge cases have not been tested.
 - **No retry persistence.** If the application is killed during a flush, partial state depends on whether the queue rotation completed. The tolerant reader handles most corruption cases.

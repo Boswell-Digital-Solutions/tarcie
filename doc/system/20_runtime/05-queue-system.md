@@ -27,27 +27,52 @@ The queue reader is tolerant of malformed lines:
 
 This ensures a single corrupted event never blocks the entire queue.
 
-## Rotation
+## Claim
 
-### Cap Rotation
+A flush does not read the live queue and delete it afterwards. It **claims**
+the queue first: `queue.jsonl` is renamed into `sending/` under the same lock
+that guards `append`.
 
-When the queue reaches `DEFAULT_QUEUE_MAX_EVENTS` (10,000 events), the current `queue.jsonl` is renamed to:
+The rename is the handoff. An event captured while a flush is in flight lands
+in a fresh `queue.jsonl` and is never part of the claim, so it cannot be
+archived as sent without being sent.
+
+A claim also picks up every file already in `sending/`, oldest first. A flush
+that was interrupted leaves its batch there, and the next claim recovers it.
+The cost of a crash is a retry, not a capture.
+
+The claim ends one of two ways:
+
+- **Complete.** Every event reached the sink. Each claim file is renamed to
+  `queue.sent.{STAMP}.jsonl` in the sent directory.
+- **Defer.** Only the first *n* events reached the sink. The remainder is
+  written back into `sending/` and the originals are archived. The next flush
+  retries what is still owed and does not resend what the sink accepted.
+
+If the process dies between writing the remainder and archiving the originals,
+the remainder is delivered twice. The reliability contract prefers a duplicate
+to a loss.
+
+## Cap Rotation
+
+When the queue reaches `DEFAULT_QUEUE_MAX_EVENTS` (10,000 events), the current
+`queue.jsonl` is renamed to:
 
 ```
-queue.cap.{TIMESTAMP}.jsonl
+queue.cap.{STAMP}.jsonl
 ```
 
-A fresh `queue.jsonl` is created for new events. This prevents unbounded file growth if the sink is unreachable for an extended period.
+A fresh `queue.jsonl` is created for new events. This prevents unbounded file
+growth if the sink is unreachable for an extended period.
 
-### Success Rotation
+## Stamps
 
-After a successful flush, the queue file is renamed to:
+`{STAMP}` is a UTC timestamp to the second followed by a per-process sequence
+number, for example `20260814T033500Z-000004`.
 
-```
-queue.sent.{TIMESTAMP}.jsonl
-```
-
-This preserves a local record of sent events while clearing the active queue.
+The sequence number is not decoration. The timestamp alone resolves to the
+second, so two rotations within one second produced the same name and the
+second rename destroyed the first file.
 
 ## Capacity
 
