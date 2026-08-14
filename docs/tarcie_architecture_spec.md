@@ -11,9 +11,9 @@ It records only repository surfaces directly observable from the current working
 
 | Surface | Current truth |
 | --- | --- |
-| Canonical technical reference | `doc/system/` plus generated root `SYSTEM.md` |
+| Canonical technical reference | `doc/system/` plus generated `doc/TARSYSTEM.md` |
 | Repo-local instructions | `CLAUDE.md` |
-| Current maturity | Baseline documentation protocol alignment |
+| Current maturity | 52 unit tests, CI on every pull request |
 
 ## 3. Module Map
 

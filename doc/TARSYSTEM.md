@@ -863,6 +863,14 @@ The seven priority areas are covered. These areas are not:
 
 All modules implemented: IPC commands, JSONL queue, HTTP sink client, background flusher, data model, constraints, state management, platform paths, global hotkey.
 
+Delivery uses a **claim**: the flush renames `queue.jsonl` into `sending/`
+before it posts anything, so an event captured during a flush cannot be
+archived as sent. Section 5 describes the lifecycle and section 6 the loop.
+Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
+
+The repository has 52 unit tests and a CI workflow that runs them on every
+pull request. Section 10 lists what they cover and what they do not.
+
 ## Critical Constraints (Do Not Violate)
 
 1. **Write-only.** No readback surfaces. No query commands. No browsing UI.
