@@ -419,6 +419,17 @@ The sequence number is not decoration. The timestamp alone resolves to the
 second, so two rotations within one second produced the same name and the
 second rename destroyed the first file.
 
+The sequence counts from zero again when the process starts. A run that begins
+in the same second as a crashed one can therefore build a name that run already
+used — an orphan left in `sending/`. `rename` replaces such a file without a
+word, and the events in it would be gone.
+
+Every stamped path is therefore taken through `free_path`, which checks the
+name is free and takes a fresh stamp if it is not. A retry sorts after the name
+it could not have, so claim order still follows the clock. When no free name
+turns up, the placement fails: a failed flush leaves every event queued for the
+next one, which the reliability contract prefers to an overwrite.
+
 ## Capacity
 
 | Parameter | Default |
@@ -763,12 +774,14 @@ The suite covers the seven priority areas:
 | Sink URL validation | `sink/config.rs` | A remote sink is refused unless the operator opts in |
 | FlushResult variants | `flusher.rs` | `Empty`, `Success`, and `Deferred` each occur, and a deferral keeps every event |
 
-The suite also covers two more areas:
+The suite also covers these areas:
 
 | Area | Module | Proves |
 |------|--------|--------|
 | The command layer | `ipc/commands.rs` | A capture passes through clamp, tag, build, and append, and the queue holds the event the user meant |
 | Device identity | `util/device.rs` | The ID is minted once, read back on every run after, and replaced when the file is damaged |
+| Name reuse after a crash | `queue/jsonl.rs` | A name an earlier run left behind is never taken over, and an exhausted search fails instead of overwriting |
+| The hotkey binding | `main.rs` | The documented `HOTKEY` string parses, and it names the combination that gets registered |
 
 Each command needs a Tauri `State`, which a test cannot supply. Each one
 therefore delegates to a function over a plain `&AppState` — `capture_note_into`,
@@ -779,6 +792,10 @@ command itself adds only the state extraction.
 dir. `load_or_create_device_id_at` takes the path directly, so a test writes to
 a temporary directory instead of the real user profile. `JsonlQueue::new_in`
 gives the queue the same seam.
+
+`free_path` takes the name generator as an argument. A test can therefore offer
+a name that is already on disk, which is what a restarted sequence does, and
+hold the guard to leaving that file alone.
 
 Every test asserts intended behavior. No test currently pins a known
 deviation.
@@ -862,9 +879,15 @@ These areas have no tests:
    to do that, so no end-to-end version exists.
 2. **A crash between a partial delivery and its archive.** The duplicate this
    produces is documented, not tested; it needs process-level fault injection.
-3. **The global hotkey, the window toggle, and the shutdown flush.** All three
-   run on the event loop of a real window, so they need a running desktop
-   session.
+3. **That every stamped path goes through `free_path`.** The guard itself has
+   tests. That each of the four callers uses it — claim, defer, archive, and
+   cap rotation — is verified by reading. Forcing a collision through a caller
+   needs control of the clock and the sequence, which no seam offers.
+4. **Hotkey registration, the window toggle, and the shutdown flush.** All
+   three run on the event loop of a real window, so they need a running
+   desktop session. The hotkey *string* is covered: a test proves `HOTKEY`
+   parses and names the combination the code registers. Whether the operating
+   system then grants that combination is not covered.
 
 ---
 
@@ -881,7 +904,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 52 unit tests and a CI workflow that runs them on every
+The repository has 76 unit tests and a CI workflow that runs them on every
 pull request. Section 10 lists what they cover and what they do not.
 
 ## Critical Constraints (Do Not Violate)
@@ -895,9 +918,10 @@ pull request. Section 10 lists what they cover and what they do not.
 ## Known Limitations
 
 - **Test coverage is unit-level only.** The seven priority areas in section 10
-  have tests, and so do the command layer and device-ID persistence. The
-  hotkey, the window toggle, and the shutdown flush do not: all three need a
-  running desktop session. Section 10 lists what stays uncovered.
+  have tests, and so do the command layer, device-ID persistence, the name
+  guard, and the hotkey string. Hotkey registration, the window toggle, and the
+  shutdown flush do not: all three need a running desktop session. Section 10
+  lists what stays uncovered.
 - **A crash between a partial delivery and its archive duplicates the
   remainder.** The undelivered events are written back before the originals are
   archived, so a crash between those two steps offers the remainder again. This
