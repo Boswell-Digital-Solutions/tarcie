@@ -238,3 +238,38 @@ No sibling repository was modified.
 5. Decide `"csp": null` before Phase 2 adds screenshots.
 
 Items 3 to 5 are operator decisions. Nothing in this brief settles them.
+
+---
+
+## 11. Addendum — the tree moved again, 2026-08-14
+
+Sections 1 to 10 record the tree at `062e7935`. Work later the same day moved
+the head past it. The figures above are the state at preparation, not the state
+now. The addendum records the drift rather than rewriting a dated reading, which
+is the treatment section 10 asks a GATE-00 session to apply to the packet.
+
+Two defects in the delivery path were found and corrected:
+
+- **The sink client had no time bound.** `reqwest` sets no timeout, no read
+  timeout, and no connect timeout by default. A sink that accepted the
+  connection and then stopped answering held the request open with nothing to
+  report. The background flusher is a single task, so that one flush ended
+  delivery for the rest of the session. Nothing said so, because a deferral is
+  logged only once a flush ends. Every request now carries
+  `SINK_REQUEST_TIMEOUT_SECS`, which is 30 seconds.
+- **A deferral named the attempt, not the cause.** The log line read
+  `flush deferred, every event kept: POST to sink` for a refused connection, a
+  timeout, and a name that does not resolve alike. The reason now carries the
+  whole error chain.
+
+Both matter to this plan set, because Phase 3 gives tarcie a real intake to
+deliver to. A silent intake is the failure a live receiver can produce that a
+missing one cannot.
+
+The Rust suite is now 89 tests. The frontend suite is unchanged at 22, and the
+`BUILD_OK designation=TAR parts=20` line in section 9 still holds.
+
+Nothing else in this brief is affected. Section 4's duplicate paths, disk usage,
+and security posture are unchanged, note latency is still unmeasured, and
+section 5 still holds: the Forge_Command intake is absent, and tarcie's default
+sink URL still points at a port nothing serves.

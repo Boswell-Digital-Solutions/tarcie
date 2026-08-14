@@ -43,10 +43,25 @@ All defined in `constraints.rs`:
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | `SOURCE_VERSION` | `"tarcie-v1.0.0"` | Stamped on every event |
+| `DEFAULT_CONTEXT` | `"General"` | `app_context` when a note carries no `#tag` |
 | `MAX_CONTEXT_CHARS` | 64 | Max length of `app_context` field |
 | `MAX_TAG_CHARS` | 32 | Max length of extracted `#tag` |
 | `MAX_CONTENT_BYTES` | 10,240 (10 KB) | Max size of `content` field |
 | `DEFAULT_FLUSH_INTERVAL_SECS` | 300 | Background flush timer |
+| `MIN_FLUSH_INTERVAL_SECS` | 1 | Floor under the flush interval |
 | `DEFAULT_BATCH_MAX` | 200 | Events per HTTP POST |
 | `DEFAULT_QUEUE_MAX_EVENTS` | 10,000 | Queue cap before rotation |
+| `HOTKEY` | `"Ctrl+Alt+T"` | The capture hotkey, parsed into the registered binding |
 | `HOTKEY_DEBOUNCE_MS` | 500 | Minimum interval between hotkey activations |
+| `SHUTDOWN_FLUSH_SECS` | 5 | How long a close waits for the final flush |
+| `SINK_REQUEST_TIMEOUT_SECS` | 30 | How long one POST to the sink may take |
+| `MAX_LOG_BYTES` | 1,048,576 (1 MiB) | Log size before rotation, per file |
+| `MAX_LOG_LINE_CHARS` | 2,048 | Max length of one log line |
+
+None of these is configurable. The environment variables in section 7 are the
+whole configuration surface.
+
+`SINK_REQUEST_TIMEOUT_SECS` and `SHUTDOWN_FLUSH_SECS` are both deadlines, and
+they answer different questions. The first bounds one request, so a sink that
+stops answering cannot end delivery for the session. The second bounds the
+final flush, so a slow sink cannot hold the window open on the way out.

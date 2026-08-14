@@ -5,8 +5,8 @@
 Tarcie has a Rust unit test suite and a frontend unit test suite.
 
 The Rust tests live beside the code they cover, in `#[cfg(test)]` modules in
-`queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`, `flusher.rs`,
-`util/device.rs`, `util/log.rs`, and `main.rs`.
+`queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`, `sink/client.rs`,
+`flusher.rs`, `util/device.rs`, `util/log.rs`, and `main.rs`.
 
 The frontend tests run under Vitest and live beside the code they cover:
 
@@ -39,6 +39,9 @@ The suite also covers these areas:
 | Name reuse after a crash | `queue/jsonl.rs` | A name an earlier run left behind is never taken over, and an exhausted search fails instead of overwriting |
 | The hotkey binding | `main.rs` | The documented `HOTKEY` string parses, and it names the combination that gets registered |
 | The log | `util/log.rs` | A report reaches the file stamped, the file rotates at its ceiling and keeps one previous, an over-long line is shortened, and a log that cannot be written does not take the caller down |
+| The request bound | `sink/client.rs` | A sink that never answers is given up on at the bound, and a sink that answers inside the bound is not cut off |
+| A sink that stops answering | `flusher.rs` | The production path carries a deadline, so a flush over a silent sink ends instead of running on |
+| The deferral reason | `flusher.rs` | A deferral names the cause and not only the attempt |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
 | Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes and hides the overlay, and only a confirmed note clears the box |
 | The overlay wiring | `src/overlay.ts` | Enter sends what was on screen, Escape puts the overlay away without capturing, the marker button captures with no reason, and the overlay arrives focused |
@@ -65,6 +68,26 @@ with a fake clock and never waits five real seconds.
 call, and the window's hide. `src/main.ts` supplies the real ones; a test
 supplies a document it built and calls it can drive. `src/main.ts` is then
 bootstrap only.
+
+`SinkClient::with_timeout` takes the request bound directly, so a test proves
+it in a quarter of a second rather than waiting out `SINK_REQUEST_TIMEOUT_SECS`.
+It is `cfg(test)`, because it also accepts no bound at all and production must
+not be able to ask for that.
+
+The bound is proven on a real clock, which is deliberate. A paused clock
+advances to the nearest deadline as soon as the runtime idles, and waiting on a
+real socket idles it. A paused test therefore cannot tell a sink that never
+answers from one that answers at once, because both end at the bound. Two
+real-clock tests hold it instead: a silent sink is given up on, and a healthy
+sink is not cut off. The second is what keeps the first from passing against a
+client that refuses everything.
+
+One paused test needs a real exchange to succeed —
+`a_partial_multi_batch_delivery_retries_only_what_is_owed`, where the sink must
+accept the first batch. It runs through `flusher_unbounded`, with no bound for
+the paused clock to jump to. The paused test beside it holds the opposite
+ground: with no bound in `SinkClient::new` there is no deadline at all, the
+flush never returns, and its guard reports that rather than hanging the suite.
 
 `LogFile::with_ceiling` takes the size ceiling directly, so a test proves the
 rotation without writing a megabyte to do it. The tests build a `LogFile` in a

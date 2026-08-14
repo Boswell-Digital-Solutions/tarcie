@@ -494,7 +494,22 @@ Each HTTP POST sends:
 
 - **Max retries:** 3 attempts per batch
 - **Backoff:** Exponential -- `2^retry` seconds (2s, 4s, 8s)
+- **Per request:** `SINK_REQUEST_TIMEOUT_SECS` (30s) bounds one POST
 - **On exhaustion:** Flush returns `Deferred` with reason. Events remain in the queue file untouched
+
+The per-request bound is what ends a wait on a sink that stops answering. A
+refused connection fails at once and reports itself. A sink that accepts the
+connection and then goes quiet holds a healthy connection open and reports
+nothing, and `reqwest` applies no time bound of its own.
+
+The bound matters because the background flusher is a single task. A flush that
+does not return takes every later flush with it, for the rest of the session.
+Captures still reach the queue, nothing leaves it, and the log stays silent,
+because a deferral is only logged once a flush ends.
+
+Four attempts and the backoff between them come to 134 seconds. That is inside
+the 300-second default flush interval, so a bounded flush finishes before the
+next one is due.
 
 ## FlushResult
 
@@ -517,6 +532,12 @@ queue keeping its promise rather than a fault, but it is also the only word
 anyone gets that captures are not arriving: tarcie has no readback surface, so
 an unreported deferral leaves a sink that has been refusing for days looking
 like a sink with nothing to do.
+
+The reason carries the whole cause chain. `anyhow` prints only the outermost
+context in its plain `Display`, and every failure inside `post_json` carries the
+context `POST to sink`. A refused connection, a timeout, and a name that does
+not resolve therefore reported the same four words, which name the attempt and
+never the cause. `MAX_LOG_LINE_CHARS` still bounds the line.
 
 `Empty` and `Success` are not logged. A flush that worked has nothing to say.
 
@@ -555,6 +576,11 @@ The flusher uses a dedicated result enum rather than `Result<T, E>`:
 | `Deferred(String)` | Could not flush; reason string explains why. Events remain in queue |
 
 `Deferred` is not a panic condition. It means the sink is temporarily unreachable and events are safe in the queue file. The next flush cycle will retry.
+
+The reason names the cause, not the attempt. It carries the whole error chain,
+because `anyhow` prints only the outermost context on its own and every failure
+in `post_json` shares one. A sink that answers with an error status already
+names itself, because that path builds its own message.
 
 ## Queue Read Tolerance
 
@@ -858,13 +884,28 @@ All defined in `constraints.rs`:
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | `SOURCE_VERSION` | `"tarcie-v1.0.0"` | Stamped on every event |
+| `DEFAULT_CONTEXT` | `"General"` | `app_context` when a note carries no `#tag` |
 | `MAX_CONTEXT_CHARS` | 64 | Max length of `app_context` field |
 | `MAX_TAG_CHARS` | 32 | Max length of extracted `#tag` |
 | `MAX_CONTENT_BYTES` | 10,240 (10 KB) | Max size of `content` field |
 | `DEFAULT_FLUSH_INTERVAL_SECS` | 300 | Background flush timer |
+| `MIN_FLUSH_INTERVAL_SECS` | 1 | Floor under the flush interval |
 | `DEFAULT_BATCH_MAX` | 200 | Events per HTTP POST |
 | `DEFAULT_QUEUE_MAX_EVENTS` | 10,000 | Queue cap before rotation |
+| `HOTKEY` | `"Ctrl+Alt+T"` | The capture hotkey, parsed into the registered binding |
 | `HOTKEY_DEBOUNCE_MS` | 500 | Minimum interval between hotkey activations |
+| `SHUTDOWN_FLUSH_SECS` | 5 | How long a close waits for the final flush |
+| `SINK_REQUEST_TIMEOUT_SECS` | 30 | How long one POST to the sink may take |
+| `MAX_LOG_BYTES` | 1,048,576 (1 MiB) | Log size before rotation, per file |
+| `MAX_LOG_LINE_CHARS` | 2,048 | Max length of one log line |
+
+None of these is configurable. The environment variables in section 7 are the
+whole configuration surface.
+
+`SINK_REQUEST_TIMEOUT_SECS` and `SHUTDOWN_FLUSH_SECS` are both deadlines, and
+they answer different questions. The first bounds one request, so a sink that
+stops answering cannot end delivery for the session. The second bounds the
+final flush, so a slow sink cannot hold the window open on the way out.
 
 ---
 
@@ -875,8 +916,8 @@ All defined in `constraints.rs`:
 Tarcie has a Rust unit test suite and a frontend unit test suite.
 
 The Rust tests live beside the code they cover, in `#[cfg(test)]` modules in
-`queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`, `flusher.rs`,
-`util/device.rs`, `util/log.rs`, and `main.rs`.
+`queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`, `sink/client.rs`,
+`flusher.rs`, `util/device.rs`, `util/log.rs`, and `main.rs`.
 
 The frontend tests run under Vitest and live beside the code they cover:
 
@@ -909,6 +950,9 @@ The suite also covers these areas:
 | Name reuse after a crash | `queue/jsonl.rs` | A name an earlier run left behind is never taken over, and an exhausted search fails instead of overwriting |
 | The hotkey binding | `main.rs` | The documented `HOTKEY` string parses, and it names the combination that gets registered |
 | The log | `util/log.rs` | A report reaches the file stamped, the file rotates at its ceiling and keeps one previous, an over-long line is shortened, and a log that cannot be written does not take the caller down |
+| The request bound | `sink/client.rs` | A sink that never answers is given up on at the bound, and a sink that answers inside the bound is not cut off |
+| A sink that stops answering | `flusher.rs` | The production path carries a deadline, so a flush over a silent sink ends instead of running on |
+| The deferral reason | `flusher.rs` | A deferral names the cause and not only the attempt |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
 | Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes and hides the overlay, and only a confirmed note clears the box |
 | The overlay wiring | `src/overlay.ts` | Enter sends what was on screen, Escape puts the overlay away without capturing, the marker button captures with no reason, and the overlay arrives focused |
@@ -935,6 +979,26 @@ with a fake clock and never waits five real seconds.
 call, and the window's hide. `src/main.ts` supplies the real ones; a test
 supplies a document it built and calls it can drive. `src/main.ts` is then
 bootstrap only.
+
+`SinkClient::with_timeout` takes the request bound directly, so a test proves
+it in a quarter of a second rather than waiting out `SINK_REQUEST_TIMEOUT_SECS`.
+It is `cfg(test)`, because it also accepts no bound at all and production must
+not be able to ask for that.
+
+The bound is proven on a real clock, which is deliberate. A paused clock
+advances to the nearest deadline as soon as the runtime idles, and waiting on a
+real socket idles it. A paused test therefore cannot tell a sink that never
+answers from one that answers at once, because both end at the bound. Two
+real-clock tests hold it instead: a silent sink is given up on, and a healthy
+sink is not cut off. The second is what keeps the first from passing against a
+client that refuses everything.
+
+One paused test needs a real exchange to succeed —
+`a_partial_multi_batch_delivery_retries_only_what_is_owed`, where the sink must
+accept the first batch. It runs through `flusher_unbounded`, with no bound for
+the paused clock to jump to. The paused test beside it holds the opposite
+ground: with no bound in `SinkClient::new` there is no deadline at all, the
+flush never returns, and its guard reports that rather than hanging the suite.
 
 `LogFile::with_ceiling` takes the size ceiling directly, so a test proves the
 rotation without writing a megabyte to do it. The tests build a `LogFile` in a
@@ -1071,7 +1135,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 85 Rust unit tests and 22 frontend unit tests, and a CI
+The repository has 89 Rust unit tests and 22 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 

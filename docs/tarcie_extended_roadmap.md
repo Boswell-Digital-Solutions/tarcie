@@ -29,8 +29,9 @@ current implementation reality.
 
 **Delivered:**
 
-- 85 Rust unit tests across `queue/jsonl.rs`, `ipc/commands.rs`,
-  `sink/config.rs`, `flusher.rs`, `util/device.rs`, `util/log.rs`, and `main.rs`
+- 89 Rust unit tests across `queue/jsonl.rs`, `ipc/commands.rs`,
+  `sink/config.rs`, `sink/client.rs`, `flusher.rs`, `util/device.rs`,
+  `util/log.rs`, and `main.rs`
 - 22 frontend unit tests across `src/capture.ts` and `src/overlay.ts`, under
   Vitest, with jsdom for the overlay
 - `.github/workflows/ci.yml`, which builds the frontend, typechecks it, runs
@@ -44,6 +45,11 @@ current implementation reality.
   name a restarted run could take over, a queue that was discarded rather than
   delivered on reaching its cap, a capture budget that was documented and never
   implemented, and two paths that cleared text the user had never captured
+- a bound on every request to the sink. A sink that accepted the connection and
+  then stopped answering held the flush open, and the background flusher is one
+  task, so that flush ended delivery for the session without a word. The
+  deferral reason now also names the cause rather than the attempt, because it
+  is what the log carries
 
 Section 10 of the system document records what the tests cover and what they do
 not. The uncovered set is the honest starting point for more work here.

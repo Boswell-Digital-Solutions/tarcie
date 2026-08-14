@@ -28,6 +28,11 @@ The flusher uses a dedicated result enum rather than `Result<T, E>`:
 
 `Deferred` is not a panic condition. It means the sink is temporarily unreachable and events are safe in the queue file. The next flush cycle will retry.
 
+The reason names the cause, not the attempt. It carries the whole error chain,
+because `anyhow` prints only the outermost context on its own and every failure
+in `post_json` shares one. A sink that answers with an error status already
+names itself, because that path builds its own message.
+
 ## Queue Read Tolerance
 
 The JSONL reader skips malformed lines rather than failing the entire read. This means:
