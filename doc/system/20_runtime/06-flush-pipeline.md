@@ -55,6 +55,16 @@ The flusher returns one of three outcomes:
 
 The `flush_now` IPC command triggers an immediate flush cycle outside the timer. It follows the same logic as the background loop but returns the result directly to the caller.
 
+## Reporting
+
+The background loop logs a `Deferred` result with its reason. A deferral is the
+queue keeping its promise rather than a fault, but it is also the only word
+anyone gets that captures are not arriving: tarcie has no readback surface, so
+an unreported deferral leaves a sink that has been refusing for days looking
+like a sink with nothing to do.
+
+`Empty` and `Success` are not logged. A flush that worked has nothing to say.
+
 ## Graceful Shutdown
 
 On window close, Tarcie attempts a final flush with a **5-second timeout**. If the flush does not complete within 5 seconds, the application exits and events remain safely in the queue file for the next launch.

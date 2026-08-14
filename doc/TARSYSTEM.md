@@ -506,6 +506,16 @@ The flusher returns one of three outcomes:
 
 The `flush_now` IPC command triggers an immediate flush cycle outside the timer. It follows the same logic as the background loop but returns the result directly to the caller.
 
+## Reporting
+
+The background loop logs a `Deferred` result with its reason. A deferral is the
+queue keeping its promise rather than a fault, but it is also the only word
+anyone gets that captures are not arriving: tarcie has no readback surface, so
+an unreported deferral leaves a sink that has been refusing for days looking
+like a sink with nothing to do.
+
+`Empty` and `Success` are not logged. A flush that worked has nothing to say.
+
 ## Graceful Shutdown
 
 On window close, Tarcie attempts a final flush with a **5-second timeout**. If the flush does not complete within 5 seconds, the application exits and events remain safely in the queue file for the next launch.
@@ -715,6 +725,20 @@ All configuration is via environment variables. There is no config file. Default
 | `TARCIE_FLUSH_INTERVAL_SECS` | `300` | Seconds between background flush cycles |
 | `TARCIE_BATCH_MAX` | `200` | Maximum events per HTTP POST batch |
 | `TARCIE_QUEUE_MAX_EVENTS` | `10000` | Queue cap -- triggers rotation when reached |
+
+## Floors
+
+Three of the numeric settings are floored at the smallest value that still
+works, because a value below the floor disables the thing it configures:
+
+| Variable | Floor | Below it |
+|----------|-------|----------|
+| `TARCIE_FLUSH_INTERVAL_SECS` | `1` | `tokio::time::interval` panics on a zero period, in the spawned flush task where nothing reports it |
+| `TARCIE_BATCH_MAX` | `1` | A zero batch never drains the queue |
+| `TARCIE_QUEUE_MAX_EVENTS` | `100` | A cap this low rotates on almost every append |
+
+An unparsable value is not an error. It falls back to the default, so a typo
+costs the override and not the launch.
 
 ## Localhost-Only Default
 
@@ -960,7 +984,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 77 Rust unit tests and 9 frontend unit tests, and a CI
+The repository has 78 Rust unit tests and 9 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
