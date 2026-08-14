@@ -144,7 +144,7 @@ Tarcie is strictly **write-only** in v1. There is no readback surface, no catego
 | `model.rs` | -- | `TarcieEvent` struct + `EventType` enum |
 | `constraints.rs` | -- | All v1 hard limits and constants |
 | `state.rs` | -- | `AppState` (config, queue, flusher, device_id, mono_start) |
-| `util/` | `paths.rs`, `device.rs` | Platform directory paths via `directories` crate, and the device identity |
+| `util/` | `paths.rs`, `device.rs`, `log.rs` | Platform directory paths via `directories` crate, the device identity, and the operational log |
 
 ## Data Flow
 
@@ -562,6 +562,58 @@ The JSONL reader skips malformed lines rather than failing the entire read. This
 
 This is intentional: data durability of valid events is prioritized over strict consistency.
 
+## The Log
+
+Tarcie has no readback surface, so nothing on screen reports that delivery has
+stopped. Everything the application has to say goes to a file instead:
+
+| File | Path |
+|------|------|
+| Live log | `<data dir>/logs/tarcie.log` |
+| Previous log | `<data dir>/logs/tarcie.1.log` |
+
+`<data dir>` is the platform data directory the `directories` crate resolves,
+through `util::paths::logs_dir`.
+
+The log opens first in `setup`, so every step after it can report. A log that
+will not open is not a reason to refuse to capture: the reports fall back to
+stderr and the application carries on. Reports go to stderr in any case, so a
+run from a terminal still shows them.
+
+### What it holds
+
+- the sink and the flush interval, at startup
+- a deferred flush, with its reason
+- a background flush error
+- a queue line that did not parse, by line number
+- a queue that reached its cap
+- a device ID file that could not be read
+
+**No capture content is ever written to the log.** The log records what happened
+to events, never what was in them. A line that carries content is a defect: the
+log sits outside the queue, so content in it is a copy of the user's notes that
+nothing in the design accounts for.
+
+The sink URL is reported through `url_without_credentials`, because a URL can
+carry a username and password and `Url`'s own `Display` prints them. The auth
+token is never reported.
+
+### Bounds
+
+The log is capped at `MAX_LOG_BYTES`. On reaching it the file is renamed to
+`tarcie.1.log` and a fresh one starts, so the pair costs at most twice the cap.
+
+Replacing the previous log is deliberate, and is the one rename in tarcie
+allowed to overwrite. The queue never overwrites, because an overwritten queue
+file is lost captures. An overwritten log is lost diagnostics, and a log that
+grows until the disk is gone would take the queue with it.
+
+One line is capped at `MAX_LOG_LINE_CHARS`. A deferral carries the sink's
+response text, and how long that runs is the sink's decision, not tarcie's.
+
+The log is never fsynced and never fails a capture. A write that cannot happen
+stops at stderr.
+
 ## Philosophy
 
 Tarcie does not fail loudly to the user. Capture must feel instant and invisible. Errors are logged internally but the overlay never shows error dialogs or failure states. If a capture fails, the 5-second revert constraint ensures the user is not blocked.
@@ -815,7 +867,7 @@ Tarcie has a Rust unit test suite and a frontend unit test suite.
 
 The Rust tests live beside the code they cover, in `#[cfg(test)]` modules in
 `queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`, `flusher.rs`,
-`util/device.rs`, and `main.rs`.
+`util/device.rs`, `util/log.rs`, and `main.rs`.
 
 The frontend tests live in `src/capture.test.ts` and run under Vitest. They
 cover `src/capture.ts`, which holds the capture flow apart from the DOM and
@@ -842,6 +894,7 @@ The suite also covers these areas:
 | Device identity | `util/device.rs` | The ID is minted once, read back on every run after, and replaced when the file is damaged |
 | Name reuse after a crash | `queue/jsonl.rs` | A name an earlier run left behind is never taken over, and an exhausted search fails instead of overwriting |
 | The hotkey binding | `main.rs` | The documented `HOTKEY` string parses, and it names the combination that gets registered |
+| The log | `util/log.rs` | A report reaches the file stamped, the file rotates at its ceiling and keeps one previous, an over-long line is shortened, and a log that cannot be written does not take the caller down |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
 | Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes, hides the overlay, and clears the box |
 
@@ -862,6 +915,11 @@ hold the guard to leaving that file alone.
 `runCapture` takes the send and the budget as arguments, so a test drives both
 with a fake clock and never waits five real seconds. `src/main.ts` keeps only
 the DOM wiring, which no test covers.
+
+`LogFile::with_ceiling` takes the size ceiling directly, so a test proves the
+rotation without writing a megabyte to do it. The tests build a `LogFile` in a
+temporary directory and never call `log::init_in`, so the process-wide log stays
+closed and nothing in the suite writes to the real user profile.
 
 Every test asserts intended behavior. No test currently pins a known
 deviation.
@@ -984,7 +1042,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 78 Rust unit tests and 9 frontend unit tests, and a CI
+The repository has 85 Rust unit tests and 9 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -1059,6 +1117,7 @@ export TARCIE_BATCH_MAX=50
 | Tauri config | `src-tauri/tauri.conf.json` |
 | Queue files | Platform queue dir via `directories` crate |
 | Device ID | Platform data dir via `directories` crate |
+| Log | `<data dir>/logs/tarcie.log`, with one previous file beside it |
 
 ---
 

@@ -52,7 +52,7 @@
 | `model.rs` | -- | `TarcieEvent` struct + `EventType` enum |
 | `constraints.rs` | -- | All v1 hard limits and constants |
 | `state.rs` | -- | `AppState` (config, queue, flusher, device_id, mono_start) |
-| `util/` | `paths.rs`, `device.rs` | Platform directory paths via `directories` crate, and the device identity |
+| `util/` | `paths.rs`, `device.rs`, `log.rs` | Platform directory paths via `directories` crate, the device identity, and the operational log |
 
 ## Data Flow
 

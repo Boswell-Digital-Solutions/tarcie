@@ -6,7 +6,7 @@ Tarcie has a Rust unit test suite and a frontend unit test suite.
 
 The Rust tests live beside the code they cover, in `#[cfg(test)]` modules in
 `queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`, `flusher.rs`,
-`util/device.rs`, and `main.rs`.
+`util/device.rs`, `util/log.rs`, and `main.rs`.
 
 The frontend tests live in `src/capture.test.ts` and run under Vitest. They
 cover `src/capture.ts`, which holds the capture flow apart from the DOM and
@@ -33,6 +33,7 @@ The suite also covers these areas:
 | Device identity | `util/device.rs` | The ID is minted once, read back on every run after, and replaced when the file is damaged |
 | Name reuse after a crash | `queue/jsonl.rs` | A name an earlier run left behind is never taken over, and an exhausted search fails instead of overwriting |
 | The hotkey binding | `main.rs` | The documented `HOTKEY` string parses, and it names the combination that gets registered |
+| The log | `util/log.rs` | A report reaches the file stamped, the file rotates at its ceiling and keeps one previous, an over-long line is shortened, and a log that cannot be written does not take the caller down |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
 | Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes, hides the overlay, and clears the box |
 
@@ -53,6 +54,11 @@ hold the guard to leaving that file alone.
 `runCapture` takes the send and the budget as arguments, so a test drives both
 with a fake clock and never waits five real seconds. `src/main.ts` keeps only
 the DOM wiring, which no test covers.
+
+`LogFile::with_ceiling` takes the size ceiling directly, so a test proves the
+rotation without writing a megabyte to do it. The tests build a `LogFile` in a
+temporary directory and never call `log::init_in`, so the process-wide log stays
+closed and nothing in the suite writes to the real user profile.
 
 Every test asserts intended behavior. No test currently pins a known
 deviation.
