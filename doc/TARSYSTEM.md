@@ -203,7 +203,8 @@ pub async fn capture_note(
 **Behavior:**
 
 1. Clamp `content` to `MAX_CONTENT_BYTES` (10 KB), which trims it
-2. Refuse the note if nothing is left, before anything is written
+2. Refuse the note unless it says something that is not a tag, before anything
+   is written
 3. Extract the first `#tag` as `app_context`, clamped to `MAX_TAG_CHARS` (32)
 4. Build a `TarcieEvent` with:
    - Fresh UUID
@@ -214,19 +215,28 @@ pub async fn capture_note(
 
 **Returns:** `Ok(())`. There is no success payload.
 
-**Refusals and errors:** A note with nothing in it is refused, and nothing is
-written. A queue write failure returns the stringified error.
+**Refusals and errors:** A note that says nothing of its own is refused, and
+nothing is written. A queue write failure returns the stringified error.
 
-Step 2 is a guard on the queue rather than on the user. An empty event is as
-durable as any other — queued, delivered, and archived for good — so the
-cheapest place to stop one is before it is written. The overlay refuses one
-before it reaches here; this is the boundary that holds when something else
-asks.
+Step 2 is a guard on the queue rather than on the user. An event with no text is
+as durable as any other — queued, delivered, and archived for good — so the
+cheapest place to stop one is before it is written.
 
-A tag on its own passes the check, because the text still carries the tag at
-that point. `#bug` is therefore a note with an empty `content` and an
-`app_context` of `bug`. That is deliberate: a marker carries no tag, so a
-tag-only note is the only way to mark a moment with a label.
+The check takes **every** tag out of the text and asks whether anything is left.
+An empty box, whitespace, `#bug`, and `#a #b` are all refused. A tag names the
+context an observation belongs to, and with no observation there is nothing to
+place under it.
+
+Removing every tag is only how the decision is made. Extraction is unchanged:
+step 3 still takes the first tag as the context and leaves any others in the
+content.
+
+`has_text_of_its_own` and `extract_tag` share one tag pattern through `tag_re`,
+so the rule and the extraction cannot drift apart.
+
+This command is the one place that decides what counts as a note. The overlay
+stops an obviously empty box before anything is sent and stops at that, which
+keeps the tag pattern in one place rather than two.
 
 ---
 
@@ -733,9 +743,7 @@ Two gestures produce no capture at all, and both are silent in the same way.
 
 **An empty box.** The hotkey opens the overlay ready for typing, so a reflexive
 Enter would otherwise queue an event with no content, deliver it, and archive it
-for good. Nothing typed is nothing to capture. A tag on its own still counts,
-because a marker carries no tag and a tag-only note is the only way to mark a
-moment with a label.
+for good. Nothing typed is nothing to capture.
 
 **A second gesture while one is still running.** The box is not cleared until
 the flash ends, so a second Enter inside that window sent the same text again
@@ -746,8 +754,16 @@ the one before it is done.
 Neither guard can cost a capture. A gesture that is turned away leaves the text
 on screen, which is where every unconfirmed capture leaves it anyway.
 
-`capture_note` refuses an empty note as well. The overlay stops one first, and
-the command is the boundary that holds when something else asks. The window that did not go away is the whole signal.
+`capture_note` refuses a note that says nothing of its own, which covers more
+ground than the overlay does: an empty box, whitespace, a tag alone, and a
+string of tags alike. Section 3 states the rule.
+
+The split is deliberate. The overlay stops the obvious case so that an empty
+Enter costs no round trip. The command decides what counts as a note, so the tag
+pattern stays in one place rather than in two that can drift apart.
+
+A refusal from the command looks like every other refusal on screen: no flash,
+no hide, and the text still in the box. The window that did not go away is the whole signal.
 
 The text on screen is also the only copy anyone can point to when a capture is
 unproven, which is the second reason an unconfirmed capture never clears it.
@@ -1049,8 +1065,8 @@ The suite also covers these areas:
 | The request bound | `sink/client.rs` | A sink that never answers is given up on at the bound, and a sink that answers inside the bound is not cut off |
 | A sink that stops answering | `flusher.rs` | The production path carries a deadline, so a flush over a silent sink ends instead of running on |
 | The deferral reason | `flusher.rs` | A deferral names the cause and not only the attempt |
-| Nothing worth sending | `ipc/commands.rs` | A note with nothing in it never reaches the queue, and a tag on its own still does |
-| One capture per gesture | `src/overlay.ts` | An empty box sends nothing, a repeated Enter sends one capture, and the next note is still taken |
+| Nothing worth sending | `ipc/commands.rs` | A note that says nothing of its own never reaches the queue, whether it is empty, whitespace, a tag alone, or a string of tags, and a tagged observation still does |
+| One capture per gesture | `src/overlay.ts` | An empty box sends nothing, a repeated Enter sends one capture, a refused note keeps its text on screen, and the next note is still taken |
 | Durable placement | `queue/jsonl.rs` | A placement moves the file and neither directory sync errors, and a placement that cannot happen leaves the batch where it was |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
 | Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes and hides the overlay, and only a confirmed note clears the box |
@@ -1240,7 +1256,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 93 Rust unit tests and 26 frontend unit tests, and a CI
+The repository has 94 Rust unit tests and 27 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 

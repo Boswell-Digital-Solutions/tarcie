@@ -22,7 +22,8 @@ pub async fn capture_note(
 **Behavior:**
 
 1. Clamp `content` to `MAX_CONTENT_BYTES` (10 KB), which trims it
-2. Refuse the note if nothing is left, before anything is written
+2. Refuse the note unless it says something that is not a tag, before anything
+   is written
 3. Extract the first `#tag` as `app_context`, clamped to `MAX_TAG_CHARS` (32)
 4. Build a `TarcieEvent` with:
    - Fresh UUID
@@ -33,19 +34,28 @@ pub async fn capture_note(
 
 **Returns:** `Ok(())`. There is no success payload.
 
-**Refusals and errors:** A note with nothing in it is refused, and nothing is
-written. A queue write failure returns the stringified error.
+**Refusals and errors:** A note that says nothing of its own is refused, and
+nothing is written. A queue write failure returns the stringified error.
 
-Step 2 is a guard on the queue rather than on the user. An empty event is as
-durable as any other — queued, delivered, and archived for good — so the
-cheapest place to stop one is before it is written. The overlay refuses one
-before it reaches here; this is the boundary that holds when something else
-asks.
+Step 2 is a guard on the queue rather than on the user. An event with no text is
+as durable as any other — queued, delivered, and archived for good — so the
+cheapest place to stop one is before it is written.
 
-A tag on its own passes the check, because the text still carries the tag at
-that point. `#bug` is therefore a note with an empty `content` and an
-`app_context` of `bug`. That is deliberate: a marker carries no tag, so a
-tag-only note is the only way to mark a moment with a label.
+The check takes **every** tag out of the text and asks whether anything is left.
+An empty box, whitespace, `#bug`, and `#a #b` are all refused. A tag names the
+context an observation belongs to, and with no observation there is nothing to
+place under it.
+
+Removing every tag is only how the decision is made. Extraction is unchanged:
+step 3 still takes the first tag as the context and leaves any others in the
+content.
+
+`has_text_of_its_own` and `extract_tag` share one tag pattern through `tag_re`,
+so the rule and the extraction cannot drift apart.
+
+This command is the one place that decides what counts as a note. The overlay
+stops an obviously empty box before anything is sent and stops at that, which
+keeps the tag pattern in one place rather than two.
 
 ---
 

@@ -110,9 +110,7 @@ Two gestures produce no capture at all, and both are silent in the same way.
 
 **An empty box.** The hotkey opens the overlay ready for typing, so a reflexive
 Enter would otherwise queue an event with no content, deliver it, and archive it
-for good. Nothing typed is nothing to capture. A tag on its own still counts,
-because a marker carries no tag and a tag-only note is the only way to mark a
-moment with a label.
+for good. Nothing typed is nothing to capture.
 
 **A second gesture while one is still running.** The box is not cleared until
 the flash ends, so a second Enter inside that window sent the same text again
@@ -123,8 +121,16 @@ the one before it is done.
 Neither guard can cost a capture. A gesture that is turned away leaves the text
 on screen, which is where every unconfirmed capture leaves it anyway.
 
-`capture_note` refuses an empty note as well. The overlay stops one first, and
-the command is the boundary that holds when something else asks. The window that did not go away is the whole signal.
+`capture_note` refuses a note that says nothing of its own, which covers more
+ground than the overlay does: an empty box, whitespace, a tag alone, and a
+string of tags alike. Section 3 states the rule.
+
+The split is deliberate. The overlay stops the obvious case so that an empty
+Enter costs no round trip. The command decides what counts as a note, so the tag
+pattern stays in one place rather than in two that can drift apart.
+
+A refusal from the command looks like every other refusal on screen: no flash,
+no hide, and the text still in the box. The window that did not go away is the whole signal.
 
 The text on screen is also the only copy anyone can point to when a capture is
 unproven, which is the second reason an unconfirmed capture never clears it.

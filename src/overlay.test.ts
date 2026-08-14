@@ -82,9 +82,10 @@ describe("capturing a note", () => {
     expect(h.invoke).not.toHaveBeenCalled();
   });
 
-  it("sends a tag on its own, which carries what the user meant", async () => {
-    // A note with no text but a tag is not nothing. It is the only way to mark
-    // a moment with a label, because a marker carries no tag.
+  it("leaves what counts as a note to the command", async () => {
+    // The overlay stops an obviously empty box and stops there. `capture_note`
+    // decides the rest, including a tag with nothing behind it, so the tag
+    // pattern lives in one place rather than in two that can drift apart.
     const h = overlay();
     h.input.value = "#bug";
 
@@ -92,6 +93,19 @@ describe("capturing a note", () => {
     await settle();
 
     expect(h.invoke).toHaveBeenCalledWith("capture_note", { content: "#bug" });
+  });
+
+  it("keeps the text when the command refuses the note", async () => {
+    // A refusal is silent, like every other. The overlay stays open holding
+    // what was typed, which is the only copy anyone can point to.
+    const h = overlay(vi.fn().mockRejectedValue("a note needs text of its own"));
+    h.input.value = "#bug";
+
+    press(h.input, "Enter");
+    await vi.advanceTimersByTimeAsync(FLASH_MS);
+
+    expect(h.input.value).toBe("#bug");
+    expect(h.hide).not.toHaveBeenCalled();
   });
 
   it("sends one capture for one gesture, however often Enter is pressed", async () => {

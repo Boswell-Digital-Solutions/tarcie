@@ -42,8 +42,8 @@ The suite also covers these areas:
 | The request bound | `sink/client.rs` | A sink that never answers is given up on at the bound, and a sink that answers inside the bound is not cut off |
 | A sink that stops answering | `flusher.rs` | The production path carries a deadline, so a flush over a silent sink ends instead of running on |
 | The deferral reason | `flusher.rs` | A deferral names the cause and not only the attempt |
-| Nothing worth sending | `ipc/commands.rs` | A note with nothing in it never reaches the queue, and a tag on its own still does |
-| One capture per gesture | `src/overlay.ts` | An empty box sends nothing, a repeated Enter sends one capture, and the next note is still taken |
+| Nothing worth sending | `ipc/commands.rs` | A note that says nothing of its own never reaches the queue, whether it is empty, whitespace, a tag alone, or a string of tags, and a tagged observation still does |
+| One capture per gesture | `src/overlay.ts` | An empty box sends nothing, a repeated Enter sends one capture, a refused note keeps its text on screen, and the next note is still taken |
 | Durable placement | `queue/jsonl.rs` | A placement moves the file and neither directory sync errors, and a placement that cannot happen leaves the batch where it was |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
 | Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes and hides the overlay, and only a confirmed note clears the box |

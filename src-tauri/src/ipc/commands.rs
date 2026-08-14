@@ -37,12 +37,28 @@ fn clamp_bytes(mut s: String, max: usize) -> String {
     out
 }
 
-fn extract_tag(content: &str) -> (String, String) {
+/// What a tag looks like, in one place.
+///
+/// The whole run of tag characters is matched, not just the first
+/// `MAX_TAG_CHARS` of it, so an overlong tag is consumed along with its
+/// overflow instead of leaving the remainder behind in the content.
+fn tag_re() -> &'static Regex {
     static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-    // The whole run of tag characters is matched, not just the first
-    // MAX_TAG_CHARS of it, so an overlong tag is consumed along with its
-    // overflow instead of leaving the remainder behind in the content.
-    let re = RE.get_or_init(|| Regex::new(r"#([a-zA-Z0-9_-]+)").unwrap());
+    RE.get_or_init(|| Regex::new(r"#([a-zA-Z0-9_-]+)").unwrap())
+}
+
+/// Whether the text says anything that is not a tag.
+///
+/// Every tag is taken out to decide this, not only the first. `extract_tag`
+/// takes the first as the context and leaves the rest in the content by
+/// design, but a note made only of tags carries no observation to place under
+/// them.
+fn has_text_of_its_own(content: &str) -> bool {
+    !tag_re().replace_all(content, "").trim().is_empty()
+}
+
+fn extract_tag(content: &str) -> (String, String) {
+    let re = tag_re();
 
     if let Some(m) = re.find(content) {
         let matched = &content[m.start() + 1..m.end()];
@@ -85,18 +101,19 @@ fn build_event(
 pub fn capture_note_into(state: &AppState, content: String) -> Result<(), String> {
     let content = clamp_bytes(content, MAX_CONTENT_BYTES);
 
-    // A note with nothing in it is not an observation. `clamp_bytes` trims, so
-    // this turns away whitespace as well as an empty string.
+    // A note must say something of its own. This turns away an empty box,
+    // whitespace, a tag alone, and a string of tags alike. A tag names the
+    // context an observation belongs to; with no observation there is nothing
+    // to place under it.
     //
-    // The overlay refuses one before it reaches here. This is the boundary that
-    // holds when something else asks, and the queue is what it protects: an
-    // empty event is durable, delivered, and archived for good, like any other.
+    // This is the one place that decides what counts as a note. The overlay
+    // stops an obviously empty box before it gets here and stops at that, so
+    // the tag pattern lives in one place rather than in two that can drift.
     //
-    // A tag on its own survives the check, because the text still carries the
-    // tag at this point. That is deliberate — it is the only way to mark a
-    // moment with a label, since a marker carries no tag.
-    if content.is_empty() {
-        return Err("a note needs something in it".to_string());
+    // The queue is what the check protects. An event with no text is durable,
+    // delivered, and archived for good, like any other.
+    if !has_text_of_its_own(&content) {
+        return Err("a note needs text of its own".to_string());
     }
 
     let (tag, cleaned) = extract_tag(&content);
@@ -412,16 +429,19 @@ mod tests {
     }
 
     #[test]
-    fn a_note_with_nothing_in_it_never_reaches_the_queue() {
-        // An empty event is as durable as any other: queued, fsynced,
+    fn a_note_with_no_text_of_its_own_never_reaches_the_queue() {
+        // An event with no text is as durable as any other: queued, fsynced,
         // delivered, and archived for good. The cheapest place to stop one is
         // before it is written.
+        //
+        // A tag on its own is refused with the rest. The tag names a context
+        // for an observation; on its own there is no observation to place.
         let (state, _dir) = state_for(UNREACHABLE);
 
-        for nothing in ["", "   ", "\t\n  "] {
+        for nothing in ["", "   ", "\t\n  ", "#bug", "  #bug  ", "#a #b"] {
             assert!(
                 capture_note_into(&state, nothing.to_string()).is_err(),
-                "{nothing:?} is not an observation"
+                "{nothing:?} carries no text of its own"
             );
         }
 
@@ -429,17 +449,27 @@ mod tests {
     }
 
     #[test]
-    fn a_tag_on_its_own_is_still_a_note() {
-        // Not nothing: a marker carries no tag, so this is the only way to
-        // mark a moment with a label.
+    fn a_tag_with_text_beside_it_is_still_a_note() {
+        // The guard turns away a tag with nothing behind it, never a tagged
+        // observation.
         let (state, _dir) = state_for(UNREACHABLE);
 
-        capture_note_into(&state, "#bug".to_string()).expect("capture");
+        capture_note_into(&state, "#bug the overlay froze".to_string()).expect("capture");
 
         let events = queued(&state);
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].content, "");
+        assert_eq!(events[0].content, "the overlay froze");
         assert_eq!(events[0].app_context, "bug");
+    }
+
+    #[test]
+    fn a_bare_hash_is_text_and_is_kept() {
+        // "#" alone matches no tag, so it is content like any other character.
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        capture_note_into(&state, "# not a tag".to_string()).expect("capture");
+
+        assert_eq!(queued(&state)[0].content, "# not a tag");
     }
 
     #[test]
