@@ -11,7 +11,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 89 Rust unit tests and 22 frontend unit tests, and a CI
+The repository has 91 Rust unit tests and 22 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -35,6 +35,11 @@ and what they do not.
   size of one file, not the number of files, and a claim reads every one of
   them into memory. A sink that stays down therefore costs disk and memory.
   The contract prefers that to discarding a capture.
+- **The sent archive is never pruned.** Nothing in tarcie deletes a file, so
+  every delivered event stays on the disk under `queue/sent/` for the life of
+  the installation. That is unbounded disk, and a complete plain-text copy of
+  every capture, on a tool that has no encryption at rest. Section 5 records
+  the decision this leaves open.
 - **A crash between a partial delivery and its archive duplicates the
   remainder.** The undelivered events are written back before the originals are
   archived, so a crash between those two steps offers the remainder again. This
