@@ -23,7 +23,7 @@ a build artifact; edit the parts, never the artifact.
 
 ```bash
 npm install && npm run build      # creates dist/ — cargo needs it
-cd src-tauri && cargo test        # 43 unit tests
+cd src-tauri && cargo test        # 45 unit tests
 ```
 
 **`cargo test` fails without `dist/`.** `tauri::generate_context!` reads the
@@ -37,9 +37,9 @@ installs the system libraries, builds the frontend, runs the tests, and rebuilds
 the system document. It also fails if `doc/TARSYSTEM.md` is stale, so a change
 under `doc/system/` must ship with its rebuild.
 
-Some tests carry a `KNOWN DEVIATION` comment. These pin behavior that differs
-from the documented intent. Do not treat them as endorsement — a fix must
-change the test in the same commit.
+No test currently pins a known deviation. If one must record behavior that
+differs from the documented intent, mark it with a `KNOWN DEVIATION` comment
+that states the deviation. A fix must change that test in the same commit.
 
 ```bash
 ./scripts/context-bundle.sh --list

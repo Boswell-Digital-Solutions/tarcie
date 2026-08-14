@@ -1,7 +1,7 @@
 use crate::constraints::*;
 use anyhow::{Context, Result};
 use std::env;
-use url::Url;
+use url::{Host, Url};
 
 #[derive(Clone)]
 pub struct SinkConfig {
@@ -33,8 +33,14 @@ impl SinkConfig {
 
         let url = Url::parse(&url_raw).context("parse TARCIE_SINK_URL")?;
 
+        // Every accepted spelling is matched case-insensitively. "yes" already
+        // was and "true" was not, so TARCIE_ALLOW_REMOTE_SINK=TRUE read as a
+        // refusal. The opt-in stays explicit: anything else still closes it.
         let allow_remote = get("TARCIE_ALLOW_REMOTE_SINK")
-            .map(|v| v == "true" || v == "1" || v.eq_ignore_ascii_case("yes"))
+            .map(|v| {
+                let v = v.trim();
+                v.eq_ignore_ascii_case("true") || v == "1" || v.eq_ignore_ascii_case("yes")
+            })
             .unwrap_or(false);
 
         if !allow_remote && !is_localhost(&url) {
@@ -70,10 +76,14 @@ impl SinkConfig {
 }
 
 fn is_localhost(url: &Url) -> bool {
-    match url.host_str() {
-        Some("127.0.0.1") | Some("localhost") => true,
-        Some(host) if host.starts_with("127.") => true,
-        _ => false,
+    // Matched on the parsed host rather than on a string prefix. A prefix test
+    // let a registrable domain such as "127.example.com" pass as loopback, and
+    // it refused the IPv6 loopback address.
+    match url.host() {
+        Some(Host::Ipv4(addr)) => addr.is_loopback(),
+        Some(Host::Ipv6(addr)) => addr.is_loopback(),
+        Some(Host::Domain(name)) => name.eq_ignore_ascii_case("localhost"),
+        None => false,
     }
 }
 
@@ -123,7 +133,7 @@ mod tests {
 
     #[test]
     fn a_remote_sink_is_permitted_with_an_explicit_opt_in() {
-        for flag in ["true", "1", "yes", "YES", "Yes"] {
+        for flag in ["true", "1", "yes", "YES", "Yes", "TRUE", "True", " true "] {
             SinkConfig::resolve(vars(&[
                 ("TARCIE_SINK_URL", REMOTE),
                 ("TARCIE_ALLOW_REMOTE_SINK", flag),
@@ -134,9 +144,7 @@ mod tests {
 
     #[test]
     fn unrecognised_opt_in_values_leave_the_remote_sink_closed() {
-        // Note the asymmetry: "yes" is matched case-insensitively but "true"
-        // is not, so "TRUE" does not open a remote sink.
-        for flag in ["false", "0", "no", "TRUE", "True", ""] {
+        for flag in ["false", "0", "no", "", "  ", "truthy", "y", "on", "2"] {
             assert!(
                 SinkConfig::resolve(vars(&[
                     ("TARCIE_SINK_URL", REMOTE),
@@ -161,23 +169,25 @@ mod tests {
     }
 
     #[test]
-    fn a_hostname_beginning_with_127_passes_as_loopback() {
-        // KNOWN DEVIATION: the loopback test is a string prefix check, so a
-        // registrable domain that merely starts with "127." is accepted as
-        // local and reaches the network without an opt-in.
-        assert!(
-            SinkConfig::resolve(vars(&[("TARCIE_SINK_URL", "http://127.example.com/ingest")]))
-                .is_ok()
-        );
+    fn a_registrable_domain_is_never_loopback() {
+        // A domain is not made local by the characters it starts with. Each of
+        // these resolves off-machine and needs the explicit opt-in.
+        for url in [
+            "http://127.example.com/ingest",
+            "http://127.0.0.1.example.com/ingest",
+            "http://localhost.example.com/ingest",
+        ] {
+            assert!(
+                SinkConfig::resolve(vars(&[("TARCIE_SINK_URL", url)])).is_err(),
+                "{url} must not pass as loopback"
+            );
+        }
     }
 
     #[test]
-    fn the_ipv6_loopback_address_is_not_recognised_as_local() {
-        // KNOWN DEVIATION: [::1] is loopback, but it does not match the host
-        // check, so it is refused as though it were remote.
-        assert!(
-            SinkConfig::resolve(vars(&[("TARCIE_SINK_URL", "http://[::1]:8080/ingest")])).is_err()
-        );
+    fn the_ipv6_loopback_address_is_local() {
+        SinkConfig::resolve(vars(&[("TARCIE_SINK_URL", "http://[::1]:8080/ingest")]))
+            .expect("[::1] is loopback and needs no opt-in");
     }
 
     #[test]

@@ -18,10 +18,12 @@ The suite covers the seven priority areas:
 | Sink URL validation | `sink/config.rs` | A remote sink is refused unless the operator opts in |
 | FlushResult variants | `flusher.rs` | `Empty`, `Success`, and `Deferred` each occur, and a deferral keeps every event |
 
-Some tests pin behavior that deviates from the documented intent. Each one
-carries a `KNOWN DEVIATION` comment that states the deviation. These tests
-record what the code does today. They do not endorse it. A future fix must
-change the test in the same commit.
+Every test asserts intended behavior. No test currently pins a known
+deviation.
+
+If a future test must record behavior that differs from the documented intent,
+mark it with a `KNOWN DEVIATION` comment that states the deviation. A fix must
+change that test in the same commit.
 
 ## Prerequisites
 
