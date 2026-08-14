@@ -36,28 +36,53 @@ export interface OverlayPorts {
 export function wireOverlay(ports: OverlayPorts): void {
   const { input, marker, status, body, invoke, hide } = ports;
 
-  async function capture(kind: CaptureKind, send: () => Promise<unknown>) {
-    const effect = effectFor(await runCapture(send, CAPTURE_TIMEOUT_MS), kind);
+  /**
+   * One capture at a time.
+   *
+   * The box is not cleared until the flash ends, so a second Enter inside that
+   * window sent the same text again under a fresh id. Deduplication downstream
+   * is on `id`, so nothing would ever catch the pair.
+   *
+   * A gesture the guard turns away costs nothing. The text stays on screen,
+   * which is where every unconfirmed capture leaves it anyway, and the next
+   * gesture is taken as soon as this one is done.
+   */
+  let capturing = false;
 
-    if (!effect.flash) {
-      // Nothing confirmed the capture. The overlay stays exactly as it is,
-      // open and holding the text, and says nothing about it.
+  async function capture(kind: CaptureKind, send: () => Promise<unknown>) {
+    if (capturing) {
       return;
     }
+    capturing = true;
 
-    body.classList.add("captured");
-    status.textContent = STATUS_CAPTURED;
+    try {
+      const effect = effectFor(await runCapture(send, CAPTURE_TIMEOUT_MS), kind);
 
-    setTimeout(async () => {
-      body.classList.remove("captured");
-      status.textContent = "";
-      if (effect.hideWindow) {
-        await hide();
+      if (!effect.flash) {
+        // Nothing confirmed the capture. The overlay stays exactly as it is,
+        // open and holding the text, and says nothing about it.
+        return;
       }
-      if (effect.clearInput) {
-        input.value = "";
-      }
-    }, FLASH_MS);
+
+      body.classList.add("captured");
+      status.textContent = STATUS_CAPTURED;
+
+      await new Promise<void>((resolve) => {
+        setTimeout(async () => {
+          body.classList.remove("captured");
+          status.textContent = "";
+          if (effect.hideWindow) {
+            await hide();
+          }
+          if (effect.clearInput) {
+            input.value = "";
+          }
+          resolve();
+        }, FLASH_MS);
+      });
+    } finally {
+      capturing = false;
+    }
   }
 
   input.addEventListener("keydown", (e) => {
@@ -66,6 +91,17 @@ export function wireOverlay(ports: OverlayPorts): void {
       // Read at the keystroke. What the capture carries is what was on screen
       // when the user asked for it.
       const content = input.value || "";
+
+      // Nothing typed is nothing to capture. The hotkey opens the overlay
+      // ready for typing, so a reflexive Enter would otherwise queue an event
+      // with no content, deliver it, and archive it for good.
+      //
+      // A tag on its own is not nothing. It is the only way to mark a moment
+      // with a label, because a marker carries no tag, so it goes through.
+      if (content.trim() === "") {
+        return;
+      }
+
       capture("note", () => invoke("capture_note", { content })).catch(
         console.error,
       );

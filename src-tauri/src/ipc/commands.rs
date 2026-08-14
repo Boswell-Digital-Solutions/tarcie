@@ -84,6 +84,21 @@ fn build_event(
 /// running application.
 pub fn capture_note_into(state: &AppState, content: String) -> Result<(), String> {
     let content = clamp_bytes(content, MAX_CONTENT_BYTES);
+
+    // A note with nothing in it is not an observation. `clamp_bytes` trims, so
+    // this turns away whitespace as well as an empty string.
+    //
+    // The overlay refuses one before it reaches here. This is the boundary that
+    // holds when something else asks, and the queue is what it protects: an
+    // empty event is durable, delivered, and archived for good, like any other.
+    //
+    // A tag on its own survives the check, because the text still carries the
+    // tag at this point. That is deliberate — it is the only way to mark a
+    // moment with a label, since a marker carries no tag.
+    if content.is_empty() {
+        return Err("a note needs something in it".to_string());
+    }
+
     let (tag, cleaned) = extract_tag(&content);
 
     let ctx = clamp_bytes(tag, MAX_CONTEXT_CHARS);
@@ -394,6 +409,37 @@ mod tests {
             events[0].content.ends_with(TRUNCATION_MARKER),
             "the queued event discloses that it was shortened"
         );
+    }
+
+    #[test]
+    fn a_note_with_nothing_in_it_never_reaches_the_queue() {
+        // An empty event is as durable as any other: queued, fsynced,
+        // delivered, and archived for good. The cheapest place to stop one is
+        // before it is written.
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        for nothing in ["", "   ", "\t\n  "] {
+            assert!(
+                capture_note_into(&state, nothing.to_string()).is_err(),
+                "{nothing:?} is not an observation"
+            );
+        }
+
+        assert!(queued(&state).is_empty(), "nothing was written");
+    }
+
+    #[test]
+    fn a_tag_on_its_own_is_still_a_note() {
+        // Not nothing: a marker carries no tag, so this is the only way to
+        // mark a moment with a label.
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        capture_note_into(&state, "#bug".to_string()).expect("capture");
+
+        let events = queued(&state);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].content, "");
+        assert_eq!(events[0].app_context, "bug");
     }
 
     #[test]

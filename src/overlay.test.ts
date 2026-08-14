@@ -70,6 +70,62 @@ describe("capturing a note", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it("sends nothing when there is nothing in the box", async () => {
+    // A hotkey opens the overlay ready for typing, so a reflexive Enter costs
+    // an event with no content — queued, delivered, and archived for good.
+    const h = overlay();
+    h.input.value = "   ";
+
+    press(h.input, "Enter");
+    await settle();
+
+    expect(h.invoke).not.toHaveBeenCalled();
+  });
+
+  it("sends a tag on its own, which carries what the user meant", async () => {
+    // A note with no text but a tag is not nothing. It is the only way to mark
+    // a moment with a label, because a marker carries no tag.
+    const h = overlay();
+    h.input.value = "#bug";
+
+    press(h.input, "Enter");
+    await settle();
+
+    expect(h.invoke).toHaveBeenCalledWith("capture_note", { content: "#bug" });
+  });
+
+  it("sends one capture for one gesture, however often Enter is pressed", async () => {
+    // The box is not cleared until the flash ends, so a second Enter inside
+    // that window sent the same text again under a fresh id. Downstream
+    // deduplication is on id, so nothing would ever catch it.
+    const h = overlay();
+    h.input.value = "a note";
+
+    press(h.input, "Enter");
+    press(h.input, "Enter");
+    await settle();
+
+    expect(h.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes the next note once the one before it is done", async () => {
+    // The guard holds for one capture, never for the next one.
+    const h = overlay();
+    h.input.value = "first";
+
+    press(h.input, "Enter");
+    await vi.advanceTimersByTimeAsync(FLASH_MS);
+
+    h.input.value = "second";
+    press(h.input, "Enter");
+    await settle();
+
+    expect(h.invoke).toHaveBeenCalledTimes(2);
+    expect(h.invoke).toHaveBeenLastCalledWith("capture_note", {
+      content: "second",
+    });
+  });
+
   it("confirms, then puts the overlay away and clears the box", async () => {
     const h = overlay();
     h.input.value = "a note";
