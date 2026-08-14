@@ -13,6 +13,7 @@ mod test_sink;
 mod util;
 
 use crate::constraints::*;
+use crate::flusher::FlushResult;
 use crate::queue::jsonl::JsonlQueue;
 use crate::sink::client::SinkClient;
 use crate::sink::config::SinkConfig;
@@ -99,8 +100,18 @@ fn main() {
                 let mut ticker = tokio::time::interval(interval);
                 loop {
                     ticker.tick().await;
-                    if let Err(e) = flusher_bg.flush_with_retry().await {
-                        eprintln!("tarcie: background flush error: {}", e);
+                    match flusher_bg.flush_with_retry().await {
+                        // A deferral is the queue keeping its promise, not a
+                        // fault. It is also the only word anyone gets that
+                        // captures are not arriving: tarcie has no readback
+                        // surface, so an unreported deferral leaves a sink
+                        // that has been refusing for days looking like a sink
+                        // with nothing to do.
+                        Ok(FlushResult::Deferred { reason }) => {
+                            eprintln!("tarcie: flush deferred, every event kept: {}", reason);
+                        }
+                        Ok(FlushResult::Empty) | Ok(FlushResult::Success { .. }) => {}
+                        Err(e) => eprintln!("tarcie: background flush error: {}", e),
                     }
                 }
             });
