@@ -1,4 +1,5 @@
 use crate::constraints::*;
+use crate::flusher::FlushResult;
 use crate::model::{EventType, TarcieEvent};
 use crate::state::AppState;
 use regex::Regex;
@@ -76,36 +77,38 @@ fn build_event(
     }
 }
 
-#[tauri::command]
-pub async fn capture_note(content: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    let mono_start = state.mono_start;
-    let device_id = state.device_id;
-
+/// The capture path behind `capture_note`, over a plain `&AppState`.
+///
+/// The command adds only Tauri's state extraction, so this function holds the
+/// whole path — clamp, tag, build, append — and a test can drive it without a
+/// running application.
+pub fn capture_note_into(state: &AppState, content: String) -> Result<(), String> {
     let content = clamp_bytes(content, MAX_CONTENT_BYTES);
     let (tag, cleaned) = extract_tag(&content);
 
     let ctx = clamp_bytes(tag, MAX_CONTEXT_CHARS);
     let cleaned = clamp_bytes(cleaned, MAX_CONTENT_BYTES);
 
-    let ev = build_event(device_id, mono_start, EventType::Note, cleaned, ctx);
+    let ev = build_event(
+        state.device_id,
+        state.mono_start,
+        EventType::Note,
+        cleaned,
+        ctx,
+    );
 
     state
         .queue
         .append(&ev, state.cfg.queue_max_events)
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+        .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub async fn capture_marker(reason: Option<String>, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    let mono_start = state.mono_start;
-    let device_id = state.device_id;
-
+/// The capture path behind `capture_marker`, over a plain `&AppState`.
+pub fn capture_marker_into(state: &AppState, reason: Option<String>) -> Result<(), String> {
     let reason = reason.map(|r| clamp_bytes(r, MAX_CONTENT_BYTES));
     let ev = build_event(
-        device_id,
-        mono_start,
+        state.device_id,
+        state.mono_start,
         EventType::Marker { reason },
         String::new(),
         DEFAULT_CONTEXT.to_string(),
@@ -114,24 +117,88 @@ pub async fn capture_marker(reason: Option<String>, state: State<'_, Arc<AppStat
     state
         .queue
         .append(&ev, state.cfg.queue_max_events)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+}
 
-    Ok(())
+/// The flush path behind `flush_now`, over a plain `&AppState`.
+///
+/// The reply is the string the caller receives, so the mapping from
+/// `FlushResult` to that string is what a test can hold.
+pub async fn flush_now_on(state: &AppState) -> Result<String, String> {
+    match state.flusher.flush_with_retry().await {
+        Ok(FlushResult::Empty) => Ok("empty".into()),
+        Ok(FlushResult::Success { count }) => Ok(format!("ok:{}", count)),
+        Ok(FlushResult::Deferred { reason }) => Ok(format!("deferred:{}", reason)),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn capture_note(content: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    capture_note_into(state.inner(), content)
+}
+
+#[tauri::command]
+pub async fn capture_marker(
+    reason: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    capture_marker_into(state.inner(), reason)
 }
 
 #[tauri::command]
 pub async fn flush_now(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    match state.flusher.flush_with_retry().await {
-        Ok(crate::flusher::FlushResult::Empty) => Ok("empty".into()),
-        Ok(crate::flusher::FlushResult::Success { count }) => Ok(format!("ok:{}", count)),
-        Ok(crate::flusher::FlushResult::Deferred { reason }) => Ok(format!("deferred:{}", reason)),
-        Err(e) => Err(e.to_string()),
-    }
+    flush_now_on(state.inner()).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::flusher::Flusher;
+    use crate::queue::jsonl::JsonlQueue;
+    use crate::sink::client::SinkClient;
+    use crate::sink::config::SinkConfig;
+    use crate::test_sink::{spawn_sink, OK, UNREACHABLE};
+    use tempfile::TempDir;
+
+    /// An application state whose queue is isolated in a temporary directory
+    /// and whose sink is the given URL.
+    ///
+    /// The `TempDir` comes back with it: dropping it removes the queue, so it
+    /// has to outlive the state.
+    fn state_for(url: &str) -> (Arc<AppState>, TempDir) {
+        let dir = TempDir::new().expect("create temp dir");
+        let url = url.to_string();
+
+        let cfg = SinkConfig::resolve(|key| match key {
+            "TARCIE_SINK_URL" => Some(url.clone()),
+            _ => None,
+        })
+        .expect("resolve sink config");
+
+        let queue = Arc::new(
+            JsonlQueue::new_in(dir.path().join("queue"), dir.path().join("queue/sent"))
+                .expect("build the queue"),
+        );
+        let sink =
+            SinkClient::new(cfg.url.clone(), cfg.auth.clone()).expect("build the sink client");
+        let flusher = Arc::new(Flusher::new(Arc::clone(&queue), sink, cfg.clone()));
+
+        let state = Arc::new(AppState {
+            cfg,
+            queue,
+            flusher,
+            device_id: Uuid::new_v4(),
+            mono_start: Instant::now(),
+        });
+
+        (state, dir)
+    }
+
+    /// What the live queue holds, without claiming it.
+    fn queued(state: &AppState) -> Vec<TarcieEvent> {
+        state.queue.read_all_tolerant().expect("read the queue")
+    }
 
     // --- 4. Content clamping ---------------------------------------------
 
@@ -268,5 +335,158 @@ mod tests {
             let (tag, _) = extract_tag(input);
             assert_eq!(tag, expected, "input: {input}");
         }
+    }
+
+    // --- 8. The command layer ---------------------------------------------
+    //
+    // The tests above hold the parts. These hold the whole path a capture
+    // takes: what the user typed goes in, and what the queue keeps comes out.
+
+    #[test]
+    fn a_captured_note_reaches_the_queue_with_its_tag_as_the_context() {
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        capture_note_into(&state, "#meeting discuss roadmap".to_string()).expect("capture");
+
+        let events = queued(&state);
+        assert_eq!(events.len(), 1, "the capture was queued");
+        assert_eq!(events[0].content, "discuss roadmap");
+        assert_eq!(events[0].app_context, "meeting");
+        assert!(matches!(events[0].event_type, EventType::Note));
+    }
+
+    #[test]
+    fn a_note_without_a_tag_lands_under_the_default_context() {
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        capture_note_into(&state, "  just a thought  ".to_string()).expect("capture");
+
+        let events = queued(&state);
+        assert_eq!(events[0].content, "just a thought");
+        assert_eq!(events[0].app_context, DEFAULT_CONTEXT);
+    }
+
+    #[test]
+    fn a_captured_note_carries_the_device_identity_and_the_source_version() {
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        capture_note_into(&state, "a note".to_string()).expect("capture");
+
+        let events = queued(&state);
+        assert_eq!(
+            events[0].device_id, state.device_id,
+            "the sink can tell which machine captured it"
+        );
+        assert_eq!(events[0].source_version, SOURCE_VERSION);
+    }
+
+    #[test]
+    fn an_oversized_note_is_queued_clamped_rather_than_refused() {
+        // Losing the capture would cost more than losing its tail.
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        capture_note_into(&state, "a".repeat(MAX_CONTENT_BYTES * 2)).expect("capture");
+
+        let events = queued(&state);
+        assert_eq!(events.len(), 1, "the capture is kept, not rejected");
+        assert!(events[0].content.as_bytes().len() <= MAX_CONTENT_BYTES);
+        assert!(
+            events[0].content.ends_with(TRUNCATION_MARKER),
+            "the queued event discloses that it was shortened"
+        );
+    }
+
+    #[test]
+    fn a_captured_marker_has_no_content_and_the_default_context() {
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        capture_marker_into(&state, None).expect("capture");
+
+        let events = queued(&state);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].content, "");
+        assert_eq!(events[0].app_context, DEFAULT_CONTEXT);
+        assert!(matches!(
+            events[0].event_type,
+            EventType::Marker { reason: None }
+        ));
+    }
+
+    #[test]
+    fn a_marker_reason_is_carried_through_to_the_queue() {
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        capture_marker_into(&state, Some("  stepping away  ".to_string())).expect("capture");
+
+        match &queued(&state)[0].event_type {
+            EventType::Marker { reason } => assert_eq!(reason.as_deref(), Some("stepping away")),
+            EventType::Note => panic!("expected a marker, got a note"),
+        }
+    }
+
+    #[test]
+    fn captures_keep_their_order_in_the_queue() {
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        for i in 0..3 {
+            capture_note_into(&state, format!("n{i}")).expect("capture");
+        }
+
+        let contents: Vec<String> = queued(&state).iter().map(|e| e.content.clone()).collect();
+        assert_eq!(contents, ["n0", "n1", "n2"]);
+    }
+
+    #[test]
+    fn every_capture_gets_its_own_event_id() {
+        // The sink deduplicates on `id`, so two captures sharing one would
+        // silently collapse into a single event downstream.
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        capture_note_into(&state, "first".to_string()).expect("capture");
+        capture_note_into(&state, "second".to_string()).expect("capture");
+        capture_marker_into(&state, None).expect("capture");
+
+        let events = queued(&state);
+        let mut ids: Vec<_> = events.iter().map(|e| e.id).collect();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), 3, "three captures, three ids");
+    }
+
+    #[tokio::test]
+    async fn flush_now_reports_empty_when_there_is_nothing_to_send() {
+        let (state, _dir) = state_for(UNREACHABLE);
+
+        // The sink is unreachable; contacting it at all would fail the test.
+        assert_eq!(flush_now_on(&state).await.expect("flush"), "empty");
+    }
+
+    #[tokio::test]
+    async fn flush_now_reports_the_count_it_delivered() {
+        let (url, server) = spawn_sink(OK);
+        let (state, _dir) = state_for(&url);
+
+        capture_note_into(&state, "one".to_string()).expect("capture");
+        capture_note_into(&state, "two".to_string()).expect("capture");
+
+        assert_eq!(flush_now_on(&state).await.expect("flush"), "ok:2");
+
+        let _ = server.join();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn flush_now_reports_a_deferral_and_keeps_the_capture() {
+        let (state, _dir) = state_for(UNREACHABLE);
+        capture_note_into(&state, "keep me".to_string()).expect("capture");
+
+        let reply = flush_now_on(&state).await.expect("flush");
+        assert!(
+            reply.starts_with("deferred:"),
+            "an unreachable sink defers, got {reply}"
+        );
+
+        // The reliability contract: a deferral never costs a capture.
+        let owed = state.queue.claim().expect("claim");
+        assert_eq!(owed.events()[0].content, "keep me");
     }
 }

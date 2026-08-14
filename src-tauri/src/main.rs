@@ -8,6 +8,8 @@ mod model;
 mod queue;
 mod sink;
 mod state;
+#[cfg(test)]
+mod test_sink;
 mod util;
 
 use crate::constraints::*;
@@ -15,27 +17,11 @@ use crate::queue::jsonl::JsonlQueue;
 use crate::sink::client::SinkClient;
 use crate::sink::config::SinkConfig;
 use crate::state::AppState;
+use crate::util::device::load_or_create_device_id;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Manager, WebviewWindow};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
-use uuid::Uuid;
-
-fn load_or_create_device_id() -> anyhow::Result<Uuid> {
-    use crate::util::paths::device_id_path;
-    use std::fs;
-
-    let path = device_id_path()?;
-    if let Ok(s) = fs::read_to_string(&path) {
-        if let Ok(id) = Uuid::parse_str(s.trim()) {
-            return Ok(id);
-        }
-    }
-    let id = Uuid::new_v4();
-    fs::create_dir_all(path.parent().unwrap())?;
-    fs::write(&path, id.to_string())?;
-    Ok(id)
-}
 
 fn toggle_window(window: &WebviewWindow) {
     let visible = window.is_visible().unwrap_or(false);
@@ -112,13 +98,18 @@ fn main() {
             let flusher_close = Arc::clone(&flusher);
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    let rt = tokio::runtime::Handle::current();
                     let flusher = Arc::clone(&flusher_close);
-                    let _ = rt.block_on(async {
+
+                    // A window event arrives on the event loop thread, which
+                    // has no Tokio runtime entered. `Handle::current()` panics
+                    // there, so the final flush never ran. Tauri's own runtime
+                    // is reachable from any thread and blocks on it safely.
+                    let _ = tauri::async_runtime::block_on(async {
                         tokio::time::timeout(
-                            Duration::from_secs(5),
-                            flusher.flush_with_retry()
-                        ).await
+                            Duration::from_secs(SHUTDOWN_FLUSH_SECS),
+                            flusher.flush_with_retry(),
+                        )
+                        .await
                     });
                 }
             });

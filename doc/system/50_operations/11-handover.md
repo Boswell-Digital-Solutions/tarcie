@@ -17,8 +17,9 @@ All modules implemented: IPC commands, JSONL queue, HTTP sink client, background
 ## Known Limitations
 
 - **Test coverage is unit-level only.** The seven priority areas in section 10
-  have tests. The Tauri command layer, the hotkey, and device-ID persistence do
-  not. Section 10 lists what stays uncovered.
+  have tests, and so do the command layer and device-ID persistence. The
+  hotkey, the window toggle, and the shutdown flush do not: all three need a
+  running desktop session. Section 10 lists what stays uncovered.
 - **A crash between a partial delivery and its archive duplicates the
   remainder.** The undelivered events are written back before the originals are
   archived, so a crash between those two steps offers the remainder again. This
