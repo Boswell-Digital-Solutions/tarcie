@@ -70,6 +70,76 @@ describe("capturing a note", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it("sends nothing when there is nothing in the box", async () => {
+    // A hotkey opens the overlay ready for typing, so a reflexive Enter costs
+    // an event with no content — queued, delivered, and archived for good.
+    const h = overlay();
+    h.input.value = "   ";
+
+    press(h.input, "Enter");
+    await settle();
+
+    expect(h.invoke).not.toHaveBeenCalled();
+  });
+
+  it("leaves what counts as a note to the command", async () => {
+    // The overlay stops an obviously empty box and stops there. `capture_note`
+    // decides the rest, including a tag with nothing behind it, so the tag
+    // pattern lives in one place rather than in two that can drift apart.
+    const h = overlay();
+    h.input.value = "#bug";
+
+    press(h.input, "Enter");
+    await settle();
+
+    expect(h.invoke).toHaveBeenCalledWith("capture_note", { content: "#bug" });
+  });
+
+  it("keeps the text when the command refuses the note", async () => {
+    // A refusal is silent, like every other. The overlay stays open holding
+    // what was typed, which is the only copy anyone can point to.
+    const h = overlay(vi.fn().mockRejectedValue("a note needs text of its own"));
+    h.input.value = "#bug";
+
+    press(h.input, "Enter");
+    await vi.advanceTimersByTimeAsync(FLASH_MS);
+
+    expect(h.input.value).toBe("#bug");
+    expect(h.hide).not.toHaveBeenCalled();
+  });
+
+  it("sends one capture for one gesture, however often Enter is pressed", async () => {
+    // The box is not cleared until the flash ends, so a second Enter inside
+    // that window sent the same text again under a fresh id. Downstream
+    // deduplication is on id, so nothing would ever catch it.
+    const h = overlay();
+    h.input.value = "a note";
+
+    press(h.input, "Enter");
+    press(h.input, "Enter");
+    await settle();
+
+    expect(h.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes the next note once the one before it is done", async () => {
+    // The guard holds for one capture, never for the next one.
+    const h = overlay();
+    h.input.value = "first";
+
+    press(h.input, "Enter");
+    await vi.advanceTimersByTimeAsync(FLASH_MS);
+
+    h.input.value = "second";
+    press(h.input, "Enter");
+    await settle();
+
+    expect(h.invoke).toHaveBeenCalledTimes(2);
+    expect(h.invoke).toHaveBeenLastCalledWith("capture_note", {
+      content: "second",
+    });
+  });
+
   it("confirms, then puts the overlay away and clears the box", async () => {
     const h = overlay();
     h.input.value = "a note";
@@ -160,21 +230,47 @@ describe("the other gestures", () => {
     expect(h.invoke).toHaveBeenCalledWith("capture_marker", { reason: null });
   });
 
-  it("leaves an uncaptured note alone when a marker is captured", async () => {
-    // The marker is a separate gesture that happens to share the overlay. It
-    // used to take the box with it, so text typed and never captured was
-    // erased by a click that had nothing to do with it.
+  it("takes what is in the box as the marker's label", async () => {
+    // A marker used to ignore the box, which left no way to say what a moment
+    // was about once a tag-only note was refused. It now carries the text as
+    // its label, so the text is captured rather than passed over.
     const h = overlay();
-    h.input.value = "a note never captured";
+    h.input.value = "#bug";
+
+    h.marker.click();
+    await settle();
+
+    expect(h.invoke).toHaveBeenCalledWith("capture_marker", {
+      reason: "#bug",
+    });
+  });
+
+  it("clears the box once the marker that took it is confirmed", async () => {
+    // The text was captured, so leaving it on screen would invite the same
+    // label being sent twice.
+    const h = overlay();
+    h.input.value = "#bug";
 
     h.marker.click();
     await settle();
     await vi.advanceTimersByTimeAsync(FLASH_MS);
 
-    expect(h.input.value, "the note is still there to send").toBe(
-      "a note never captured",
-    );
+    expect(h.input.value).toBe("");
     expect(h.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the label when nothing confirmed the marker", async () => {
+    // The ground the old rule was really defending: text is never taken off
+    // the screen by a capture that was not confirmed to have carried it.
+    const h = overlay(vi.fn().mockRejectedValue("no"));
+    h.input.value = "#bug";
+
+    h.marker.click();
+    await settle();
+    await vi.advanceTimersByTimeAsync(FLASH_MS);
+
+    expect(h.input.value).toBe("#bug");
+    expect(h.hide).not.toHaveBeenCalled();
   });
 
   it("still clears the box when the note itself was captured", async () => {

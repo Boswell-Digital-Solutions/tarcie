@@ -13,7 +13,7 @@ It records only repository surfaces directly observable from the current working
 | --- | --- |
 | Canonical technical reference | `doc/system/` plus generated `doc/TARSYSTEM.md` |
 | Repo-local instructions | `CLAUDE.md` |
-| Current maturity | 91 Rust unit tests and 22 frontend unit tests; CI runs both suites, a TypeScript typecheck, and a stale-document check on every pull request |
+| Current maturity | 96 Rust unit tests and 29 frontend unit tests; CI runs both suites, a TypeScript typecheck, and a stale-document check on every pull request |
 
 ## 3. Module Map
 

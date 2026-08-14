@@ -29,10 +29,10 @@ current implementation reality.
 
 **Delivered:**
 
-- 91 Rust unit tests across `queue/jsonl.rs`, `ipc/commands.rs`,
+- 96 Rust unit tests across `queue/jsonl.rs`, `ipc/commands.rs`,
   `sink/config.rs`, `sink/client.rs`, `flusher.rs`, `util/device.rs`,
   `util/log.rs`, and `main.rs`
-- 22 frontend unit tests across `src/capture.ts` and `src/overlay.ts`, under
+- 29 frontend unit tests across `src/capture.ts` and `src/overlay.ts`, under
   Vitest, with jsdom for the overlay
 - `.github/workflows/ci.yml`, which builds the frontend, typechecks it, runs
   both suites and the document build on every pull request, and fails on a
