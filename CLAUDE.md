@@ -32,8 +32,10 @@ frontend bundle exists. The build also needs the Tauri Linux system libraries
 (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, and the rest listed in
 `doc/system/50_operations/10-testing.md`).
 
-No CI workflow exists in this repo. `bash doc/system/BUILD.sh` must still
-succeed after documentation changes.
+`.github/workflows/ci.yml` runs the same ground on every pull request. It
+installs the system libraries, builds the frontend, runs the tests, and rebuilds
+the system document. It also fails if `doc/TARSYSTEM.md` is stale, so a change
+under `doc/system/` must ship with its rebuild.
 
 Some tests carry a `KNOWN DEVIATION` comment. These pin behavior that differs
 from the documented intent. Do not treat them as endorsement — a fix must
