@@ -1,3 +1,4 @@
+use crate::util::log;
 use crate::util::paths::device_id_path;
 use anyhow::{Context, Result};
 use std::fs;
@@ -27,10 +28,10 @@ pub fn load_or_create_device_id_at(path: &Path) -> Result<Uuid> {
         // The file is there but does not hold an ID. A fresh one is written
         // over it rather than failing the launch: a capture tool that refuses
         // to start costs more than the identity it could not read.
-        eprintln!(
-            "tarcie: device id at {} is unreadable, minting a new one",
+        log::write(format_args!(
+            "device id at {} is unreadable, minting a new one",
             path.display()
-        );
+        ));
     }
 
     let id = Uuid::new_v4();

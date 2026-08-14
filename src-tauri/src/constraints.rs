@@ -29,6 +29,15 @@ pub const HOTKEY_DEBOUNCE_MS: u64 = 500;
 // this much at most and never costs an event.
 pub const SHUTDOWN_FLUSH_SECS: u64 = 5;
 
+// The log is bounded. One previous file is kept, so the pair costs at most
+// twice this. A log that grows until the disk is gone would take the queue
+// with it, and the queue is the reliability contract.
+pub const MAX_LOG_BYTES: u64 = 1024 * 1024;
+
+// A deferral carries the sink's response text, which is the sink's to decide
+// the length of. One line never gets to be the reason the log fills.
+pub const MAX_LOG_LINE_CHARS: usize = 2048;
+
 // MONOTONIC CLOCK LIMITATION:
 // timestamp_mono_ms resets on app restart. Use only for relative timing
 // within a session. Cross-session ordering relies on timestamp_utc.

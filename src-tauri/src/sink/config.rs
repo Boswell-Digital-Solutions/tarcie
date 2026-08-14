@@ -75,6 +75,20 @@ impl SinkConfig {
     }
 }
 
+impl SinkConfig {
+    /// The sink URL with any credentials it carries removed.
+    ///
+    /// A URL may hold a username and password, and `Url`'s own `Display`
+    /// prints them. This is what goes in the log, so that reporting where
+    /// events are sent never reports how to send them.
+    pub fn url_without_credentials(&self) -> String {
+        let mut safe = self.url.clone();
+        let _ = safe.set_username("");
+        let _ = safe.set_password(None);
+        safe.to_string()
+    }
+}
+
 fn is_localhost(url: &Url) -> bool {
     // Matched on the parsed host rather than on a string prefix. A prefix test
     // let a registrable domain such as "127.example.com" pass as loopback, and
@@ -241,6 +255,24 @@ mod tests {
         assert_eq!(
             cfg.flush_interval_secs, MIN_FLUSH_INTERVAL_SECS,
             "a zero interval would take the background flusher down"
+        );
+    }
+
+    #[test]
+    fn the_sink_url_is_reported_without_its_credentials() {
+        let cfg = SinkConfig::resolve(vars(&[
+            ("TARCIE_SINK_URL", "https://user:s3cret@example.com/ingest"),
+            ("TARCIE_ALLOW_REMOTE_SINK", "true"),
+        ]))
+        .expect("config resolves");
+
+        let reported = cfg.url_without_credentials();
+
+        assert!(!reported.contains("s3cret"), "the password never leaves: {reported}");
+        assert!(!reported.contains("user"), "nor the username: {reported}");
+        assert!(
+            reported.contains("example.com/ingest"),
+            "the sink is still identifiable: {reported}"
         );
     }
 
