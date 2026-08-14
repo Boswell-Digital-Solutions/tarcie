@@ -23,6 +23,17 @@ use std::time::{Duration, Instant};
 use tauri::{Manager, WebviewWindow};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 
+/// The capture hotkey, built from the string the documentation states.
+///
+/// The binding used to be assembled from `Modifiers` and `Code` beside a
+/// `HOTKEY` constant that nothing read. The two could drift apart, and the
+/// documented hotkey would then name a key combination that does nothing.
+fn capture_shortcut() -> anyhow::Result<Shortcut> {
+    HOTKEY
+        .parse::<Shortcut>()
+        .map_err(|e| anyhow::anyhow!("parse the capture hotkey {HOTKEY:?}: {e}"))
+}
+
 fn toggle_window(window: &WebviewWindow) {
     let visible = window.is_visible().unwrap_or(false);
     if visible {
@@ -64,8 +75,8 @@ fn main() {
             let window = app.get_webview_window("main").expect("main window");
             let last_toggle = Arc::new(Mutex::new(Instant::now() - Duration::from_millis(HOTKEY_DEBOUNCE_MS)));
 
-            // Register global shortcut Ctrl+Alt+T
-            let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyT);
+            // Register the global shortcut the documentation states.
+            let shortcut = capture_shortcut()?;
 
             {
                 let window = window.clone();
@@ -123,4 +134,20 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_documented_hotkey_is_the_one_that_gets_registered() {
+        // A hotkey that does not parse would only show up at launch, on the
+        // user's machine, as a capture tool with no way in.
+        assert_eq!(
+            capture_shortcut().expect("parse the documented hotkey"),
+            Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyT),
+            "HOTKEY states Ctrl+Alt+T, so that is what gets registered"
+        );
+    }
 }

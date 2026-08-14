@@ -12,7 +12,18 @@ use std::sync::Mutex;
 ///
 /// The stamp alone resolves to the second, so two rotations in one second
 /// produced the same name and the second `rename` destroyed the first.
+///
+/// The count starts again when the process does. A run that begins in the
+/// same second as an earlier one can therefore repeat a name that run already
+/// used, which is what `free_path` exists to catch.
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// How many names to try before a placement is treated as impossible.
+///
+/// Names never repeat inside one run, so an attempt only fails when an earlier
+/// run left the name behind. A crash leaves few files, and the limit is well
+/// above that.
+const MAX_NAME_ATTEMPTS: usize = 64;
 
 fn stamp() -> String {
     let seq = SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -20,6 +31,32 @@ fn stamp() -> String {
         "{}-{:06}",
         chrono::Utc::now().format("%Y%m%dT%H%M%SZ"),
         seq % 1_000_000
+    )
+}
+
+/// A path in `dir` that no file occupies yet.
+///
+/// `SEQUENCE` restarts with the process, so a run that begins in the same
+/// second as a crashed one can build a name that is already on disk — an
+/// orphan the crash left in `sending/`. `fs::rename` replaces such a file
+/// without a word, and the events in it are then gone.
+///
+/// Each attempt takes a fresh stamp, so a retry sorts after the name it could
+/// not have, and the claim order still follows the clock. An exhausted search
+/// is an error: a failed flush leaves every event queued for the next one,
+/// which the reliability contract prefers to an overwrite.
+fn free_path(dir: &Path, name: impl Fn(&str) -> String) -> Result<PathBuf> {
+    for _ in 0..MAX_NAME_ATTEMPTS {
+        let candidate = dir.join(name(&stamp()));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
+    anyhow::bail!(
+        "no free name in {} after {} attempts",
+        dir.display(),
+        MAX_NAME_ATTEMPTS
     )
 }
 
@@ -118,7 +155,7 @@ impl JsonlQueue {
         let _g = self.lock.lock().unwrap();
 
         if self.queue_path.exists() {
-            let target = self.sending_dir.join(format!("{}.jsonl", stamp()));
+            let target = free_path(&self.sending_dir, |s| format!("{s}.jsonl"))?;
             fs::rename(&self.queue_path, &target).context("claim the queue file")?;
         }
 
@@ -154,7 +191,7 @@ impl JsonlQueue {
 
         let remaining = &claim.events[delivered.min(claim.events.len())..];
         if !remaining.is_empty() {
-            let target = self.sending_dir.join(format!("{}.jsonl", stamp()));
+            let target = free_path(&self.sending_dir, |s| format!("{s}.jsonl"))?;
             write_events(&target, remaining)?;
         }
 
@@ -166,9 +203,7 @@ impl JsonlQueue {
 
     fn archive(&self, files: Vec<PathBuf>) -> Result<()> {
         for file in files {
-            let target = self
-                .sent_path
-                .join(format!("queue.sent.{}.jsonl", stamp()));
+            let target = free_path(&self.sent_path, |s| format!("queue.sent.{s}.jsonl"))?;
             fs::rename(&file, &target).context("archive a delivered batch")?;
         }
         Ok(())
@@ -189,9 +224,7 @@ impl JsonlQueue {
         if !self.queue_path.exists() {
             return Ok(());
         }
-        let sent = self
-            .sent_path
-            .join(format!("{}.{}.jsonl", prefix, stamp()));
+        let sent = free_path(&self.sent_path, |s| format!("{prefix}.{s}.jsonl"))?;
         fs::rename(&self.queue_path, &sent).context("rotate queue file")?;
         Ok(())
     }
@@ -582,5 +615,88 @@ mod tests {
         }
 
         assert_eq!(rotated(&queue).len(), 4, "each rotation keeps its own file");
+    }
+
+    // --- Names a crashed run left behind ----------------------------------
+    //
+    // The sequence that separates same-second names counts from zero again
+    // when the process starts. A run that begins in the second a crashed run
+    // ended in can therefore build a name that is already on disk.
+
+    #[test]
+    fn a_name_a_crashed_run_left_behind_is_never_taken_over() {
+        let dir = TempDir::new().expect("create temp dir");
+        let orphan = dir.path().join("taken.jsonl");
+        fs::write(&orphan, "an undelivered batch").expect("plant the orphan");
+
+        // The first attempt offers the orphan's name, as a restarted sequence
+        // would. The attempt after it offers a name nothing holds.
+        let attempt = std::cell::Cell::new(0);
+        let path = free_path(dir.path(), |_stamp| {
+            let n = attempt.get();
+            attempt.set(n + 1);
+            if n == 0 {
+                "taken.jsonl".to_string()
+            } else {
+                "fresh.jsonl".to_string()
+            }
+        })
+        .expect("find a free name");
+
+        assert_eq!(path, dir.path().join("fresh.jsonl"));
+        assert_eq!(
+            fs::read_to_string(&orphan).expect("read the orphan"),
+            "an undelivered batch",
+            "the batch the crashed run left is still there"
+        );
+    }
+
+    #[test]
+    fn a_free_name_is_taken_on_the_first_attempt() {
+        let dir = TempDir::new().expect("create temp dir");
+
+        let path = free_path(dir.path(), |s| format!("{s}.jsonl")).expect("find a free name");
+
+        assert_eq!(path.parent(), Some(dir.path()));
+        assert!(!path.exists(), "the name is free, and stays free until used");
+    }
+
+    #[test]
+    fn a_search_that_never_finds_a_free_name_fails_instead_of_overwriting() {
+        // Failing the placement leaves every event where it is, and the next
+        // flush tries again. Overwriting would spend them.
+        let dir = TempDir::new().expect("create temp dir");
+        let orphan = dir.path().join("taken.jsonl");
+        fs::write(&orphan, "an undelivered batch").expect("plant the orphan");
+
+        let result = free_path(dir.path(), |_stamp| "taken.jsonl".to_string());
+
+        assert!(result.is_err(), "an exhausted search is an error");
+        assert_eq!(
+            fs::read_to_string(&orphan).expect("read the orphan"),
+            "an undelivered batch",
+            "nothing was written over it"
+        );
+    }
+
+    #[test]
+    fn a_claim_keeps_what_an_earlier_run_left_in_sending() {
+        // A crash between the claim and the archive leaves files in sending/.
+        // The next run claims them alongside the live queue, so the events are
+        // offered again rather than stranded.
+        let (queue, dir) = temp_queue();
+        let orphan = dir.path().join("queue/sending/20200101T000000Z-000000.jsonl");
+        write_events(&orphan, &[note("from the crashed run")]).expect("plant the orphan");
+
+        queue.append(&note("from this run"), 1000).expect("append");
+
+        let claim = queue.claim().expect("claim");
+        let contents: Vec<String> = claim.events().iter().map(|e| e.content.clone()).collect();
+
+        assert_eq!(
+            contents,
+            ["from the crashed run", "from this run"],
+            "the older batch is delivered first, and neither is lost"
+        );
     }
 }

@@ -74,6 +74,17 @@ The sequence number is not decoration. The timestamp alone resolves to the
 second, so two rotations within one second produced the same name and the
 second rename destroyed the first file.
 
+The sequence counts from zero again when the process starts. A run that begins
+in the same second as a crashed one can therefore build a name that run already
+used — an orphan left in `sending/`. `rename` replaces such a file without a
+word, and the events in it would be gone.
+
+Every stamped path is therefore taken through `free_path`, which checks the
+name is free and takes a fresh stamp if it is not. A retry sorts after the name
+it could not have, so claim order still follows the clock. When no free name
+turns up, the placement fails: a failed flush leaves every event queued for the
+next one, which the reliability contract prefers to an overwrite.
+
 ## Capacity
 
 | Parameter | Default |

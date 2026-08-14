@@ -11,7 +11,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 52 unit tests and a CI workflow that runs them on every
+The repository has 76 unit tests and a CI workflow that runs them on every
 pull request. Section 10 lists what they cover and what they do not.
 
 ## Critical Constraints (Do Not Violate)
@@ -25,9 +25,10 @@ pull request. Section 10 lists what they cover and what they do not.
 ## Known Limitations
 
 - **Test coverage is unit-level only.** The seven priority areas in section 10
-  have tests, and so do the command layer and device-ID persistence. The
-  hotkey, the window toggle, and the shutdown flush do not: all three need a
-  running desktop session. Section 10 lists what stays uncovered.
+  have tests, and so do the command layer, device-ID persistence, the name
+  guard, and the hotkey string. Hotkey registration, the window toggle, and the
+  shutdown flush do not: all three need a running desktop session. Section 10
+  lists what stays uncovered.
 - **A crash between a partial delivery and its archive duplicates the
   remainder.** The undelivered events are written back before the originals are
   archived, so a crash between those two steps offers the remainder again. This
