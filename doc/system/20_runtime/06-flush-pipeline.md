@@ -6,13 +6,23 @@ The flusher is a background task that periodically drains the JSONL queue and po
 
 1. Sleep for `TARCIE_FLUSH_INTERVAL_SECS` (default: 300 seconds)
 2. Acquire the flush Mutex
-3. Read all events from `queue.jsonl` (tolerant read)
-4. If queue is empty, release lock and return to step 1
-5. Chunk events into batches of `DEFAULT_BATCH_MAX` (200)
-6. POST each batch to the sink endpoint
-7. On success: rotate queue file to `queue.sent.TIMESTAMP.jsonl`
-8. On failure after retries: return `Deferred` (events stay in queue for next cycle)
+3. **Claim** the queue — `queue.jsonl` moves into `sending/`, and any batch left
+   by an interrupted flush is picked up with it
+4. If the claim is empty, archive its files and return to step 1
+5. Chunk the claimed events into batches of `DEFAULT_BATCH_MAX` (200)
+6. POST each batch to the sink endpoint, counting what is accepted
+7. On full success: archive the claim to `queue.sent.{STAMP}.jsonl`
+8. On failure partway: **defer** — write the undelivered remainder back to
+   `sending/`, archive the originals, and return `Deferred`
 9. Release lock, return to step 1
+
+Step 3 is what keeps a capture safe. The queue is moved aside before anything
+is posted, so an event captured during delivery is not in the claim and cannot
+be archived as sent.
+
+Step 8 is what keeps delivery honest. A flush that accepted three batches and
+failed on the fourth retries only the fourth; the three the sink already holds
+are not offered again.
 
 ## Batch Payload
 

@@ -35,34 +35,64 @@ impl Flusher {
     pub async fn flush_with_retry(&self) -> Result<FlushResult> {
         let _g = self.lock.lock().await;
 
-        let events = self.queue.read_all_tolerant()?;
-        if events.is_empty() {
+        // Claiming moves the queue aside before anything is posted, so an
+        // event captured during delivery lands in a fresh queue file instead
+        // of being archived as sent without ever being sent.
+        let claim = self.queue.claim()?;
+        if claim.is_empty() {
+            // The claim may still hold files whose every line was unparsable.
+            // Archiving them keeps the next flush from claiming them forever.
+            self.queue.complete(claim)?;
             return Ok(FlushResult::Empty);
         }
 
+        let total = claim.len();
         let batch_max = self.cfg.batch_max;
-        for chunk in events.chunks(batch_max) {
-            let payload = IngestPayload { source: "tarcie", events: chunk };
+        let mut delivered = 0usize;
+        let mut failure: Option<String> = None;
 
-            let mut retries = 0u32;
-            loop {
-                match self.sink.post_json(&payload).await {
-                    Ok(_) => break,
-                    Err(_) if retries < 3 => {
-                        retries += 1;
-                        let backoff = 2u64.pow(retries);
-                        sleep(Duration::from_secs(backoff)).await;
-                        continue;
-                    }
+        {
+            let events = claim.events();
+            for chunk in events.chunks(batch_max) {
+                match self.post_chunk(chunk).await {
+                    Ok(()) => delivered += chunk.len(),
                     Err(e) => {
-                        return Ok(FlushResult::Deferred { reason: e.to_string() });
+                        failure = Some(e.to_string());
+                        break;
                     }
                 }
             }
         }
 
-        self.queue.rotate_on_success()?;
-        Ok(FlushResult::Success { count: events.len() })
+        match failure {
+            // The batches that were accepted are not offered again; only what
+            // is still owed goes back for the next cycle.
+            Some(reason) => {
+                self.queue.defer(claim, delivered)?;
+                Ok(FlushResult::Deferred { reason })
+            }
+            None => {
+                self.queue.complete(claim)?;
+                Ok(FlushResult::Success { count: total })
+            }
+        }
+    }
+
+    async fn post_chunk(&self, chunk: &[TarcieEvent]) -> Result<()> {
+        let payload = IngestPayload { source: "tarcie", events: chunk };
+
+        let mut retries = 0u32;
+        loop {
+            match self.sink.post_json(&payload).await {
+                Ok(_) => return Ok(()),
+                Err(_) if retries < 3 => {
+                    retries += 1;
+                    let backoff = 2u64.pow(retries);
+                    sleep(Duration::from_secs(backoff)).await;
+                }
+                Err(e) => return Err(e),
+            }
+        }
     }
 
     pub fn cfg(&self) -> &SinkConfig {
@@ -109,15 +139,32 @@ mod tests {
     }
 
     fn flusher_for(url: &str, queue: Arc<JsonlQueue>) -> Flusher {
+        flusher_with_batch(url, queue, None)
+    }
+
+    fn flusher_with_batch(url: &str, queue: Arc<JsonlQueue>, batch_max: Option<usize>) -> Flusher {
         let url = url.to_string();
+        let batch = batch_max.map(|n| n.to_string());
         let cfg = SinkConfig::resolve(|key| match key {
             "TARCIE_SINK_URL" => Some(url.clone()),
+            "TARCIE_BATCH_MAX" => batch.clone(),
             _ => None,
         })
         .expect("resolve sink config");
 
         let sink = SinkClient::new(cfg.url.clone(), cfg.auth.clone()).expect("build sink client");
         Flusher::new(queue, sink, cfg)
+    }
+
+    /// What the queue still owes, taken through a fresh claim.
+    fn still_owed(queue: &JsonlQueue) -> Vec<String> {
+        queue
+            .claim()
+            .expect("claim")
+            .events()
+            .iter()
+            .map(|e| e.content.clone())
+            .collect()
     }
 
     fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -226,9 +273,7 @@ mod tests {
         }
 
         // The reliability contract: an unreachable sink never costs a capture.
-        let retained = queue.read_all_tolerant().expect("read");
-        assert_eq!(retained.len(), 1);
-        assert_eq!(retained[0].content, "keep me");
+        assert_eq!(still_owed(&queue), ["keep me"]);
     }
 
     #[tokio::test(start_paused = true)]
@@ -247,10 +292,39 @@ mod tests {
             "a rejecting sink defers rather than discarding"
         );
 
-        let retained = queue.read_all_tolerant().expect("read");
-        assert_eq!(retained.len(), 1);
-        assert_eq!(retained[0].content, "keep me");
+        assert_eq!(still_owed(&queue), ["keep me"]);
 
         let _ = server.join();
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_partial_multi_batch_delivery_retries_only_what_is_owed() {
+        // The sink accepts the first batch of two, then the listener closes and
+        // the rest of the flush fails. The accepted batch must not be offered
+        // again — resending it would duplicate what the sink already holds.
+        let (queue, _dir) = temp_queue();
+        for i in 0..4 {
+            queue.append(&note(&format!("n{i}")), 1000).expect("append");
+        }
+
+        let (url, server) = spawn_sink(OK);
+        let flusher = flusher_with_batch(&url, Arc::clone(&queue), Some(2));
+
+        assert!(
+            matches!(
+                flusher.flush_with_retry().await.expect("flush"),
+                FlushResult::Deferred { .. }
+            ),
+            "a failure partway through defers"
+        );
+        let _ = server.join();
+
+        assert_eq!(still_owed(&queue), ["n2", "n3"]);
+    }
+
+    // The mid-flush capture window is proven at the queue layer, in
+    // `queue::jsonl::tests::an_event_captured_during_a_flush_is_not_archived_as_sent`,
+    // where the append can be placed between the claim and the completion. A
+    // flusher-level test cannot reach inside `flush_with_retry` to do that, so
+    // there is no honest end-to-end version of it here.
 }

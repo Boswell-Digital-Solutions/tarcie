@@ -97,14 +97,13 @@ The seven priority areas are covered. These areas are not:
 1. **The Tauri command layer.** `capture_note`, `capture_marker`, and
    `flush_now` need a Tauri `State`, so the tests cover the logic they call
    instead of the commands themselves.
-2. **Concurrent append during a flush.** The flusher reads, posts, and then
-   rotates. An append between the read and the rotate is filed as sent. No
-   test covers this window yet.
-3. **Multi-batch flush.** A flush that succeeds on one batch and fails on a
-   later one re-sends the succeeded batch on the next cycle.
-4. **Rotation timestamp collisions.** Rotation names files to the second. Two
-   rotations in one second overwrite each other.
-5. **The global hotkey and window toggle.** These need a running desktop
+2. **The mid-flush capture window at the flusher level.** The window itself is
+   covered in `queue::jsonl`, where an append can be placed between the claim
+   and the completion. A flusher test cannot reach inside `flush_with_retry`
+   to do that, so no end-to-end version exists.
+3. **A crash between a partial delivery and its archive.** The duplicate this
+   produces is documented, not tested; it needs process-level fault injection.
+4. **The global hotkey and window toggle.** These need a running desktop
    session.
-6. **Device ID persistence.** `load_or_create_device_id` writes to the real
+5. **Device ID persistence.** `load_or_create_device_id` writes to the real
    user profile and has no path seam.

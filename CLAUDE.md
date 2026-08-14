@@ -23,7 +23,7 @@ a build artifact; edit the parts, never the artifact.
 
 ```bash
 npm install && npm run build      # creates dist/ — cargo needs it
-cd src-tauri && cargo test        # 45 unit tests
+cd src-tauri && cargo test        # 52 unit tests
 ```
 
 **`cargo test` fails without `dist/`.** `tauri::generate_context!` reads the
