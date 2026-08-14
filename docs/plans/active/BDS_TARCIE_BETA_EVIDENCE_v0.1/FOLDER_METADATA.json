@@ -1,0 +1,31 @@
+{
+  "schema_version": "bds.folder-metadata.v1",
+  "folder_name": "BDS_TARCIE_BETA_EVIDENCE_v0.1_PLAN_SET",
+  "folder_role": "Canonical Drive planning packet for Tarcie beta-testing evidence capture and Forge_Command handoff",
+  "contains": [
+    "human-readable canonical plan",
+    "phased roadmap",
+    "Board Review 1 packet",
+    "source baseline",
+    "machine-readable manifest",
+    "proposed registry entry",
+    "compiled plan set"
+  ],
+  "use_for": [
+    "Board Review 1",
+    "source-lock reconciliation",
+    "schema and receipt design",
+    "future repository plan registration"
+  ],
+  "do_not_use_as": [
+    "implementation authorization",
+    "runtime configuration",
+    "credential grant",
+    "production evidence store",
+    "repair or promotion authority"
+  ],
+  "canonical_plan_id": "BDS-TARCIE-BETA-EVIDENCE-v0.1",
+  "lifecycle_status": "proposed",
+  "supersession_rule": "Any semantic change requires a new reviewed revision and updated registry record."
+}
+
