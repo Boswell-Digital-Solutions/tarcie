@@ -6,6 +6,7 @@ mod flusher;
 mod ipc;
 mod model;
 mod queue;
+mod schedule;
 mod sink;
 mod state;
 #[cfg(test)]
@@ -35,6 +36,26 @@ fn capture_shortcut() -> anyhow::Result<Shortcut> {
     HOTKEY
         .parse::<Shortcut>()
         .map_err(|e| anyhow::anyhow!("parse the capture hotkey {HOTKEY:?}: {e}"))
+}
+
+/// Say what a flush did, and hand the outcome back to the caller.
+///
+/// A deferral is the queue keeping its promise, not a fault. It is also the
+/// only word anyone gets that captures are not arriving: tarcie has no
+/// readback surface, so an unreported deferral leaves a sink that has been
+/// refusing for days looking like a sink with nothing to do.
+fn report(result: anyhow::Result<FlushResult>) -> Option<FlushResult> {
+    match result {
+        Ok(FlushResult::Deferred { reason }) => {
+            log::write(format_args!("flush deferred, every event kept: {}", reason));
+            Some(FlushResult::Deferred { reason })
+        }
+        Ok(other) => Some(other),
+        Err(e) => {
+            log::write(format_args!("background flush error: {}", e));
+            None
+        }
+    }
 }
 
 fn toggle_window(window: &WebviewWindow) {
@@ -67,11 +88,19 @@ fn main() {
 
             // Where events go and how often. The URL is reported without any
             // credentials it carries, and the auth token is never reported.
-            log::write(format_args!(
-                "started, sink {}, flush every {}s",
-                cfg.url_without_credentials(),
-                cfg.flush_interval_secs
-            ));
+            match cfg.flush_at {
+                Some(at) => log::write(format_args!(
+                    "started, sink {}, delivering daily at {}, checked every {}s",
+                    cfg.url_without_credentials(),
+                    at.format("%H:%M"),
+                    cfg.flush_interval_secs
+                )),
+                None => log::write(format_args!(
+                    "started, sink {}, flush every {}s",
+                    cfg.url_without_credentials(),
+                    cfg.flush_interval_secs
+                )),
+            }
 
             let queue = Arc::new(JsonlQueue::new()?);
 
@@ -120,25 +149,59 @@ fn main() {
                 })?;
             }
 
-            // Background flush loop
+            // Background flush loop. The ticker is the same either way; what
+            // differs is whether every tick delivers, or only the first tick
+            // after today's target time has passed.
             let flusher_bg = Arc::clone(&flusher);
             let interval = Duration::from_secs(cfg.flush_interval_secs);
+            let flush_at = cfg.flush_at;
+            let marker = util::paths::schedule_marker_path().ok();
+
             tauri::async_runtime::spawn(async move {
                 let mut ticker = tokio::time::interval(interval);
                 loop {
                     ticker.tick().await;
-                    match flusher_bg.flush_with_retry().await {
-                        // A deferral is the queue keeping its promise, not a
-                        // fault. It is also the only word anyone gets that
-                        // captures are not arriving: tarcie has no readback
-                        // surface, so an unreported deferral leaves a sink
-                        // that has been refusing for days looking like a sink
-                        // with nothing to do.
-                        Ok(FlushResult::Deferred { reason }) => {
-                            log::write(format_args!("flush deferred, every event kept: {}", reason));
+
+                    let Some(target) = flush_at else {
+                        report(flusher_bg.flush_with_retry().await);
+                        continue;
+                    };
+
+                    let now = chrono::Local::now().naive_local();
+                    let last = marker.as_deref().and_then(schedule::last_delivery);
+
+                    if !schedule::is_due(now, target, last) {
+                        continue;
+                    }
+
+                    // A claim is bounded, so a day that captured more than one
+                    // claim holds needs more than one round. On an interval
+                    // the next cycle is minutes away; here it is a day, and a
+                    // backlog would never catch up.
+                    let mut drained = false;
+                    for _ in 0..MAX_SCHEDULED_ROUNDS {
+                        match report(flusher_bg.flush_with_retry().await) {
+                            Some(FlushResult::Empty) => {
+                                drained = true;
+                                break;
+                            }
+                            Some(FlushResult::Success { .. }) => continue,
+                            _ => break,
                         }
-                        Ok(FlushResult::Empty) | Ok(FlushResult::Success { .. }) => {}
-                        Err(e) => log::write(format_args!("background flush error: {}", e)),
+                    }
+
+                    // The day is recorded only once the queue is clear. A
+                    // deferral leaves it unrecorded, so the next tick tries
+                    // again rather than waiting out the night on a sink that
+                    // was briefly unreachable.
+                    if drained {
+                        if let Some(path) = marker.as_deref() {
+                            if let Err(e) = schedule::record_delivery(path, now.date()) {
+                                log::write(format_args!(
+                                    "could not record the scheduled delivery: {e:#}"
+                                ));
+                            }
+                        }
                     }
                 }
             });

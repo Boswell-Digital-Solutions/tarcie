@@ -11,7 +11,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 106 Rust unit tests and 29 frontend unit tests, and a CI
+The repository has 124 Rust unit tests and 29 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -31,10 +31,12 @@ and what they do not.
   window toggle, the shutdown flush, and the DOM wiring do not: the first three
   need a running desktop session, and the fourth needs a DOM in the test run.
   Section 10 lists what stays uncovered.
-- **The queue grows while the sink is unreachable.** Cap rotation bounds the
-  size of one file, not the number of files, and a claim reads every one of
-  them into memory. A sink that stays down therefore costs disk and memory.
-  The contract prefers that to discarding a capture.
+- **The queue grows on disk while the sink is unreachable.** Cap rotation
+  bounds the size of one file and nothing bounds the number of files, so a sink
+  that stays down costs disk without limit. The contract prefers that to
+  discarding a capture, and undelivered events cannot age out the way delivered
+  ones do. Memory is bounded: a claim takes at most `CLAIM_MAX_EVENTS`, so the
+  backlog is no longer parsed in full on every cycle.
 - **Captures are stored in plain text.** The queue and the archive hold notes
   verbatim. Both are closed to other accounts by their directory modes, and the
   archive is bounded at 90 days and 256 MiB, so it no longer grows for the life

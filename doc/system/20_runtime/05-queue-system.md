@@ -50,6 +50,23 @@ A claim also picks up every file already in `sending/`, oldest first. A flush
 that was interrupted leaves its batch there, and the next claim recovers it.
 The cost of a crash is a retry, not a capture.
 
+A claim takes at most `CLAIM_MAX_EVENTS` (5,000), oldest file first. What it
+leaves stays in `sending/` for the next cycle.
+
+Without a budget a claim read every pending file at once. Cap rotation bounds
+one file at `DEFAULT_QUEUE_MAX_EVENTS` and nothing bounds the number of files,
+so a backlog was parsed in full on every flush cycle for as long as it stood.
+A backlog is not exotic: the default sink is a loopback port nothing serves, so
+an installation nobody has configured accumulates from the first capture.
+
+The budget costs a delay and never a capture. Files are taken in the order they
+were placed, so delivery still follows the clock, and at the default interval a
+backlog drains at about sixty thousand events an hour.
+
+The budget is checked between files rather than inside one, so the first file is
+always taken whatever its size. A file larger than the budget would otherwise be
+claimed by nobody, and the events in it would sit in `sending/` for good.
+
 The claim ends one of two ways:
 
 - **Complete.** Every event reached the sink. Each claim file is renamed to
