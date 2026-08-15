@@ -527,6 +527,30 @@ created `queue.jsonl` that is every capture in it.
 Only the append that creates the file pays for the second sync, so the cost
 falls once per flush cycle rather than once per capture.
 
+### What a capture pays
+
+An append does a bounded amount of work, whatever the queue already holds. The
+mutex that guards the file holds the number of events in it, so the cap is
+checked against a number rather than against the disk.
+
+The count used to be taken by opening `queue.jsonl` and reading every line of
+it, before every append. One capture therefore cost a pass over the whole
+backlog, and the cost rose with the backlog: measured on the queue's own
+filling, a capture cost about 0.37 ms on an empty queue and about 5.3 ms at the
+default cap of ten thousand events, for content of ordinary length. Content
+that runs to `MAX_CONTENT_BYTES` puts a hundred megabytes under the same read.
+
+A backlog is the ordinary case rather than the exotic one. The default sink is a
+loopback port nothing serves, so an installation nobody has configured climbs
+that curve from its first capture — and the overlay is the surface the cost
+lands on. Held rather than recounted, the same measurement stays flat: about
+0.29 ms empty and about 0.48 ms at the cap.
+
+Three places change the file and all three hold the count: `append` adds one,
+`claim` moves the file aside and empties it, and cap rotation does the same.
+The file is read once, when the queue is built, so a restart inherits what an
+earlier run left queued and the cap still counts those events.
+
 ## Read (Tolerant)
 
 The queue reader is tolerant of malformed lines:
@@ -591,6 +615,9 @@ When the queue reaches `DEFAULT_QUEUE_MAX_EVENTS` (10,000 events), the current
 
 A fresh `queue.jsonl` is created for new events. This keeps any one file from
 growing without limit while the sink is unreachable.
+
+The count the cap is read against is the one held beside the file, described
+under *What a capture pays*.
 
 The stamp comes first in the name, so a capped batch sorts into place by age
 among the claimed ones. The next claim picks it up and delivers it along with
@@ -1528,7 +1555,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 124 Rust unit tests and 29 frontend unit tests, and a CI
+The repository has 126 Rust unit tests and 29 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -1553,7 +1580,9 @@ and what they do not.
   that stays down costs disk without limit. The contract prefers that to
   discarding a capture, and undelivered events cannot age out the way delivered
   ones do. Memory is bounded: a claim takes at most `CLAIM_MAX_EVENTS`, so the
-  backlog is no longer parsed in full on every cycle.
+  backlog is no longer parsed in full on every cycle. What a capture pays is
+  bounded too: the cap is checked against a count held in memory rather than by
+  reading the queue file back, so an append costs the same whatever the backlog.
 - **Captures are stored in plain text.** The queue and the archive hold notes
   verbatim. Both are closed to other accounts by their directory modes, and the
   archive is bounded at 90 days and 256 MiB, so it no longer grows for the life

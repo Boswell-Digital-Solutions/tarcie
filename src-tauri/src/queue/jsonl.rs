@@ -205,7 +205,26 @@ impl Claim {
 }
 
 pub struct JsonlQueue {
-    lock: Mutex<()>,
+    /// Guards every change to the live queue file, and holds how many events
+    /// are in it.
+    ///
+    /// The count is kept rather than recounted because the cap is checked on
+    /// the capture path. Counting meant opening `queue.jsonl` and reading every
+    /// line of it before each append, so one capture cost a pass over the whole
+    /// backlog — at the default cap of ten thousand events, about five
+    /// milliseconds against a third of one on an empty queue, and far more for
+    /// content that runs to `MAX_CONTENT_BYTES`.
+    ///
+    /// A backlog is the ordinary case, not the exotic one: the default sink is
+    /// a loopback port nothing serves, so an installation nobody has configured
+    /// climbs that curve from its first capture.
+    ///
+    /// Three places change the file, and all three hold this: `append` adds a
+    /// line, `claim_up_to` moves the file aside, and `rotate_at_cap_locked`
+    /// does the same at the cap. Nothing outside tarcie writes there, and the
+    /// count is read from the file once, when the queue is built, so a restart
+    /// picks up what an earlier run left.
+    queued: Mutex<usize>,
     queue_path: PathBuf,
     sending_dir: PathBuf,
     sent_path: PathBuf,
@@ -226,8 +245,9 @@ impl JsonlQueue {
         let sending_dir = queue_dir.join("sending");
         owner_only_dir(&sending_dir).context("create sending dir")?;
         let queue_path = queue_dir.join("queue.jsonl");
+        let queued = count_lines(&queue_path).context("count what an earlier run queued")?;
         Ok(Self {
-            lock: Mutex::new(()),
+            queued: Mutex::new(queued),
             queue_path,
             sending_dir,
             sent_path: sent_dir,
@@ -235,10 +255,14 @@ impl JsonlQueue {
     }
 
     pub fn append(&self, event: &TarcieEvent, queue_max_events: usize) -> Result<()> {
-        let _g = self.lock.lock().unwrap();
+        let mut queued = self.queued.lock().unwrap();
 
-        if self.line_count()? >= queue_max_events {
+        if *queued >= queue_max_events {
             self.rotate_at_cap_locked()?;
+            // The file is gone, so the count goes with it. This is set before
+            // the write rather than after, so a write that then fails leaves
+            // the count matching the empty queue on the disk.
+            *queued = 0;
         }
 
         let json = serde_json::to_string(event).context("serialize event")?;
@@ -272,11 +296,16 @@ impl JsonlQueue {
             }
         }
 
+        // Counted only once the event is durable. A failure above returns
+        // before this, so the count never claims an event the disk does not
+        // hold.
+        *queued += 1;
+
         Ok(())
     }
 
     pub fn read_all_tolerant(&self) -> Result<Vec<TarcieEvent>> {
-        let _g = self.lock.lock().unwrap();
+        let _g = self.queued.lock().unwrap();
         read_tolerant(&self.queue_path)
     }
 
@@ -297,12 +326,16 @@ impl JsonlQueue {
     /// budget of a handful rather than planting five thousand events to reach
     /// the real one.
     fn claim_up_to(&self, max_events: usize) -> Result<Claim> {
-        let _g = self.lock.lock().unwrap();
+        let mut queued = self.queued.lock().unwrap();
 
         if self.queue_path.exists() {
             let target = free_path(&self.sending_dir, |s| format!("{s}.jsonl"))?;
             rename_durably(&self.queue_path, &target).context("claim the queue file")?;
         }
+
+        // The live queue is empty either way now: the file was moved into
+        // `sending/`, or there was none to move.
+        *queued = 0;
 
         let mut pending = self.sending_files()?;
         pending.sort();
@@ -333,7 +366,7 @@ impl JsonlQueue {
 
     /// Every event in the claim reached the sink.
     pub fn complete(&self, claim: Claim) -> Result<()> {
-        let _g = self.lock.lock().unwrap();
+        let _g = self.queued.lock().unwrap();
         self.archive(claim.files)
     }
 
@@ -342,7 +375,7 @@ impl JsonlQueue {
     /// The remainder is written back so the next flush retries what is still
     /// owed instead of resending a batch the sink already accepted.
     pub fn defer(&self, claim: Claim, delivered: usize) -> Result<()> {
-        let _g = self.lock.lock().unwrap();
+        let _g = self.queued.lock().unwrap();
 
         if delivered == 0 {
             // Nothing was accepted, so the claim stands unchanged and the next
@@ -388,7 +421,7 @@ impl JsonlQueue {
     /// it already holds, and the retention period would go unkept on exactly
     /// the machines with the least reason to keep the archive at all.
     pub fn bound_archive(&self) {
-        let _g = self.lock.lock().unwrap();
+        let _g = self.queued.lock().unwrap();
         self.prune_sent();
     }
 
@@ -514,14 +547,19 @@ impl JsonlQueue {
         Ok(())
     }
 
-    fn line_count(&self) -> Result<usize> {
-        if !self.queue_path.exists() {
-            return Ok(0);
-        }
-        let f = File::open(&self.queue_path)?;
-        let reader = BufReader::new(f);
-        Ok(reader.lines().count())
+}
+
+/// How many lines a file holds.
+///
+/// Read once, when the queue is built, so a restart inherits what an earlier
+/// run left in `queue.jsonl` and the cap still counts those events. The capture
+/// path does not call this; see `JsonlQueue::queued`.
+fn count_lines(path: &Path) -> Result<usize> {
+    if !path.exists() {
+        return Ok(0);
     }
+    let f = File::open(path).with_context(|| format!("open {} to count", path.display()))?;
+    Ok(BufReader::new(f).lines().count())
 }
 
 /// Read a JSONL file, skipping anything that does not parse.
@@ -804,6 +842,69 @@ mod tests {
             contents,
             ["n0", "n1", "n2", "n3", "overflow"],
             "every capped event is offered to the sink, oldest first"
+        );
+    }
+
+    #[test]
+    fn a_restart_still_counts_what_an_earlier_run_queued() {
+        // The count is held in memory and read from the file once, when the
+        // queue is built. A restart that started from zero would let the queue
+        // grow to the cap again on top of what was already there.
+        let dir = TempDir::new().expect("create temp dir");
+        let (queue_dir, sent_dir) = (dir.path().join("queue"), dir.path().join("queue/sent"));
+        let cap = 4;
+
+        let first = JsonlQueue::new_in(queue_dir.clone(), sent_dir.clone()).expect("build queue");
+        for i in 0..cap {
+            first.append(&note(&format!("n{i}")), cap).expect("append");
+        }
+        drop(first);
+
+        let restarted = JsonlQueue::new_in(queue_dir, sent_dir).expect("rebuild queue");
+        restarted.append(&note("overflow"), cap).expect("append");
+
+        let live = restarted.read_all_tolerant().expect("read");
+        assert_eq!(
+            live.len(),
+            1,
+            "the run after a restart rotates at the cap, not past it"
+        );
+        assert_eq!(live[0].content, "overflow");
+    }
+
+    #[test]
+    fn a_claim_empties_the_count_along_with_the_queue() {
+        // A claim moves the queue file into `sending/`, so the live queue is
+        // empty and the count must say so. A count left standing carries the
+        // delivered events' weight into the fresh file and rotates it early —
+        // here, after two captures against a cap of four. Nothing is lost, but
+        // the queue fragments into small files for no reason, which is the cost
+        // the cap exists to avoid.
+        //
+        // The claim leaves part of a queue rather than a full one on purpose.
+        // A stale count at exactly the cap rotates a file that is not there
+        // yet, which is a no-op that hides the fault.
+        let (queue, _dir) = temp_queue();
+        let cap = 4;
+        for i in 0..cap / 2 {
+            queue.append(&note(&format!("n{i}")), cap).expect("append");
+        }
+
+        let claim = queue.claim().expect("claim");
+        queue.complete(claim).expect("complete");
+
+        for i in 0..cap {
+            queue.append(&note(&format!("m{i}")), cap).expect("append");
+        }
+
+        assert_eq!(
+            queue.read_all_tolerant().expect("read").len(),
+            cap,
+            "the queue after a claim fills to the cap again before rotating"
+        );
+        assert!(
+            queue.sending_files().expect("read the sending dir").is_empty(),
+            "nothing rotated, because the claim left the live queue empty"
         );
     }
 
@@ -1335,4 +1436,46 @@ mod tests {
             "the older batch is delivered first, and neither is lost"
         );
     }
+
+    /// What one capture costs as the queue fills.
+    ///
+    /// Not a gate. Timings vary by machine and filesystem, so this records a
+    /// shape rather than asserting a threshold. Run it deliberately:
+    ///
+    /// ```text
+    /// cargo test --manifest-path src-tauri/Cargo.toml \
+    ///     what_a_capture_costs_as_the_queue_fills -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore]
+    fn what_a_capture_costs_as_the_queue_fills() {
+        let (queue, _dir) = temp_queue();
+        let filler = note(&"x".repeat(280));
+
+        let mut depth = 0usize;
+        for target in [0usize, 1_000, 2_500, 5_000, 7_500, 9_999] {
+            while depth < target {
+                queue.append(&filler, 100_000).expect("append");
+                depth += 1;
+            }
+
+            let mut samples = Vec::new();
+            for _ in 0..50 {
+                let start = std::time::Instant::now();
+                queue.append(&filler, 100_000).expect("append");
+                samples.push(start.elapsed().as_micros() as u64);
+                depth += 1;
+            }
+            samples.sort();
+
+            println!(
+                "depth {:>5}  p50 {:>7}us  p95 {:>7}us  max {:>7}us",
+                target,
+                samples[samples.len() / 2],
+                samples[samples.len() * 95 / 100],
+                samples[samples.len() - 1],
+            );
+        }
+    }
+
 }

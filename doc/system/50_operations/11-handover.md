@@ -11,7 +11,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 124 Rust unit tests and 29 frontend unit tests, and a CI
+The repository has 126 Rust unit tests and 29 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -36,7 +36,9 @@ and what they do not.
   that stays down costs disk without limit. The contract prefers that to
   discarding a capture, and undelivered events cannot age out the way delivered
   ones do. Memory is bounded: a claim takes at most `CLAIM_MAX_EVENTS`, so the
-  backlog is no longer parsed in full on every cycle.
+  backlog is no longer parsed in full on every cycle. What a capture pays is
+  bounded too: the cap is checked against a count held in memory rather than by
+  reading the queue file back, so an append costs the same whatever the backlog.
 - **Captures are stored in plain text.** The queue and the archive hold notes
   verbatim. Both are closed to other accounts by their directory modes, and the
   archive is bounded at 90 days and 256 MiB, so it no longer grows for the life
