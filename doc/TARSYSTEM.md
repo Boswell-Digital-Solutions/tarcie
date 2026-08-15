@@ -671,6 +671,27 @@ cannot undo, so it is never silent. One log line carries the count, the byte
 total, and the span of stamps removed. What the events said never appears,
 which is the rule the rest of the log already keeps.
 
+## Who can read it
+
+The queue directory, `sending/`, and the archive are created at `0700`, and the
+files inside them at `0600`. Nothing masks a capture — the queue holds the
+user's notes verbatim — so the file system is the only thing between them and
+another account on the same machine.
+
+Left to the umask these are `0755` and `0644`, which makes the answer depend on
+whether the distribution closed the home directory. That is not tarcie's
+decision to inherit.
+
+**The directory is the gate.** A closed directory keeps other accounts out of
+the files inside it whatever mode those files carry, which is what makes a queue
+an earlier version created at `0644` safe without rewriting it. An existing
+directory is closed as well as a new one, because creation does not touch a
+directory that is already there.
+
+**This is not encryption at rest and does not stand in for it.** Anything
+running as the same user reads the queue as easily as tarcie does. Section 11
+records the decision that stays open.
+
 ## Capacity
 
 | Parameter | Default |
@@ -1223,6 +1244,7 @@ The suite also covers these areas:
 | Nothing worth sending | `ipc/commands.rs` | A note that says nothing of its own never reaches the queue, whether it is empty, whitespace, a tag alone, or a string of tags, and a tagged observation still does |
 | Marker labels | `ipc/commands.rs` | A label that is only a tag names the moment, and a label with text beside it splits into the tag and the rest |
 | One capture per gesture | `src/overlay.ts` | An empty box sends nothing, a repeated Enter sends one capture, a refused note keeps its text on screen, and the next note is still taken |
+| Who can read a capture | `queue/jsonl.rs` | The queue file is created at 0600 in directories at 0700, a directory an earlier version left open is closed, and a deferred batch is written closed |
 | Bounding the archive | `queue/jsonl.rs` | A batch outside the retention period is dropped, an archive over its ceiling gives up its oldest first, a file it cannot date is never deleted, a run that archives nothing still keeps the period, and what was dropped is reported |
 | Durable placement | `queue/jsonl.rs` | A placement moves the file and neither directory sync errors, and a placement that cannot happen leaves the batch where it was |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
@@ -1417,7 +1439,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 103 Rust unit tests and 29 frontend unit tests, and a CI
+The repository has 106 Rust unit tests and 29 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -1441,11 +1463,14 @@ and what they do not.
   size of one file, not the number of files, and a claim reads every one of
   them into memory. A sink that stays down therefore costs disk and memory.
   The contract prefers that to discarding a capture.
-- **The archive holds plain text, bounded but unencrypted.** A delivered batch
-  is kept for 90 days, and the archive as a whole under 256 MiB, so it no
-  longer grows for the life of the installation. What it holds is still a
-  plain-text copy of recent captures: there is no encryption at rest, and that
-  decision stays open across the queue, archive, log, and device ID alike.
+- **Captures are stored in plain text.** The queue and the archive hold notes
+  verbatim. Both are closed to other accounts by their directory modes, and the
+  archive is bounded at 90 days and 256 MiB, so it no longer grows for the life
+  of the installation. Neither is encrypted: anything running as the same user
+  reads them as easily as tarcie does, and encryption at rest stays an open
+  decision. The log holds no capture content by invariant and the device ID is
+  a random UUID, so the queue and the archive are the two surfaces that carry
+  anything worth encrypting.
 - **A crash between a partial delivery and its archive duplicates the
   remainder.** The undelivered events are written back before the originals are
   archived, so a crash between those two steps offers the remainder again. This

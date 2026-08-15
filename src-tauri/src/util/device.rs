@@ -36,7 +36,7 @@ pub fn load_or_create_device_id_at(path: &Path) -> Result<Uuid> {
 
     let id = Uuid::new_v4();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).context("create the device id dir")?;
+        crate::util::paths::owner_only_dir(parent).context("create the device id dir")?;
     }
     fs::write(path, id.to_string()).context("write the device id")?;
     Ok(id)

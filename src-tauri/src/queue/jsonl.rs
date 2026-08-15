@@ -1,10 +1,10 @@
 use crate::constraints::{SENT_MAX_BYTES, SENT_RETENTION_DAYS};
 use crate::model::TarcieEvent;
 use crate::util::log;
-use crate::util::paths::{queue_dir, sent_dir};
+use crate::util::paths::{owner_only_dir, owner_only_file, queue_dir, sent_dir};
 use anyhow::{Context, Result};
 use serde_json::Value;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -221,10 +221,10 @@ impl JsonlQueue {
     /// `new` resolves these from platform paths. This constructor takes them
     /// directly so a caller can isolate the queue from the real user profile.
     pub fn new_in(queue_dir: PathBuf, sent_dir: PathBuf) -> Result<Self> {
-        fs::create_dir_all(&queue_dir).context("create queue dir")?;
-        fs::create_dir_all(&sent_dir).context("create sent dir")?;
+        owner_only_dir(&queue_dir).context("create queue dir")?;
+        owner_only_dir(&sent_dir).context("create sent dir")?;
         let sending_dir = queue_dir.join("sending");
-        fs::create_dir_all(&sending_dir).context("create sending dir")?;
+        owner_only_dir(&sending_dir).context("create sending dir")?;
         let queue_path = queue_dir.join("queue.jsonl");
         Ok(Self {
             lock: Mutex::new(()),
@@ -248,7 +248,7 @@ impl JsonlQueue {
         // the directory needs syncing after it.
         let creates_the_file = !self.queue_path.exists();
 
-        let mut f = OpenOptions::new()
+        let mut f = owner_only_file()
             .create(true)
             .append(true)
             .open(&self.queue_path)
@@ -542,7 +542,7 @@ fn read_tolerant(path: &Path) -> Result<Vec<TarcieEvent>> {
 fn write_events(path: &Path, events: &[TarcieEvent]) -> Result<()> {
     let temp = path.with_extension("partial");
 
-    let mut f = OpenOptions::new()
+    let mut f = owner_only_file()
         .create(true)
         .truncate(true)
         .write(true)
@@ -567,6 +567,7 @@ fn write_events(path: &Path, events: &[TarcieEvent]) -> Result<()> {
 mod tests {
     use super::*;
     use crate::model::{EventType, TarcieEvent};
+    use std::fs::OpenOptions;
     use tempfile::TempDir;
     use uuid::Uuid;
 
@@ -972,6 +973,65 @@ mod tests {
             "an undelivered batch",
             "nothing was written over it"
         );
+    }
+
+    // --- Who can read a capture --------------------------------------------
+
+    #[cfg(unix)]
+    fn mode_of(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(path).expect("stat").permissions().mode() & 0o777
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_queue_is_closed_to_every_other_account() {
+        // The files hold the user's notes verbatim and nothing masks them.
+        // Left to the umask they are created 0644 in directories at 0755, so
+        // whether anyone else with a login can read them is the
+        // distribution's choice about the home directory, not tarcie's.
+        let (queue, _dir) = temp_queue();
+        queue.append(&note("private"), 1000).expect("append");
+
+        assert_eq!(mode_of(&queue.queue_path), 0o600, "the queue file");
+
+        for dir in [
+            queue.queue_path.parent().expect("queue dir"),
+            &queue.sending_dir,
+            &queue.sent_path,
+        ] {
+            assert_eq!(mode_of(dir), 0o700, "{}", dir.display());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_an_earlier_version_left_open_is_closed() {
+        // Creation does not touch a directory that is already there, so an
+        // installation that predates this would keep 0755 forever.
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new().expect("create temp dir");
+        let open = dir.path().join("queue");
+        fs::create_dir_all(&open).expect("create it open");
+        fs::set_permissions(&open, fs::Permissions::from_mode(0o755)).expect("open it up");
+
+        crate::util::paths::owner_only_dir(&open).expect("close it");
+
+        assert_eq!(mode_of(&open), 0o700);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_deferred_batch_is_written_closed() {
+        // The remainder of a partial delivery is a fresh file holding events
+        // the sink has not taken, so it is created like any other.
+        let dir = TempDir::new().expect("create temp dir");
+        let path = dir.path().join("remainder.jsonl");
+
+        write_events(&path, &[note("still owed")]).expect("write the remainder");
+
+        assert_eq!(mode_of(&path), 0o600);
     }
 
     // --- Bounding the archive ----------------------------------------------

@@ -170,6 +170,27 @@ cannot undo, so it is never silent. One log line carries the count, the byte
 total, and the span of stamps removed. What the events said never appears,
 which is the rule the rest of the log already keeps.
 
+## Who can read it
+
+The queue directory, `sending/`, and the archive are created at `0700`, and the
+files inside them at `0600`. Nothing masks a capture — the queue holds the
+user's notes verbatim — so the file system is the only thing between them and
+another account on the same machine.
+
+Left to the umask these are `0755` and `0644`, which makes the answer depend on
+whether the distribution closed the home directory. That is not tarcie's
+decision to inherit.
+
+**The directory is the gate.** A closed directory keeps other accounts out of
+the files inside it whatever mode those files carry, which is what makes a queue
+an earlier version created at `0644` safe without rewriting it. An existing
+directory is closed as well as a new one, because creation does not touch a
+directory that is already there.
+
+**This is not encryption at rest and does not stand in for it.** Anything
+running as the same user reads the queue as easily as tarcie does. Section 11
+records the decision that stays open.
+
 ## Capacity
 
 | Parameter | Default |

@@ -12,7 +12,7 @@
 use crate::constraints::{MAX_LOG_BYTES, MAX_LOG_LINE_CHARS};
 use anyhow::{Context, Result};
 use std::fmt;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -39,7 +39,7 @@ impl LogFile {
     /// `new_in` supplies the standard one. Taking it directly lets a test
     /// prove the rotation without writing a megabyte to do it.
     pub fn with_ceiling(dir: &Path, max_bytes: u64) -> Result<Self> {
-        fs::create_dir_all(dir).context("create the log dir")?;
+        crate::util::paths::owner_only_dir(dir).context("create the log dir")?;
 
         Ok(Self {
             path: dir.join("tarcie.log"),
@@ -66,7 +66,7 @@ impl LogFile {
 
         self.rotate_if_full()?;
 
-        let mut file = OpenOptions::new()
+        let mut file = crate::util::paths::owner_only_file()
             .create(true)
             .append(true)
             .open(&self.path)
