@@ -6,7 +6,7 @@ Tarcie has a Rust unit test suite and a frontend unit test suite.
 
 The Rust tests live beside the code they cover, in `#[cfg(test)]` modules in
 `queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`, `sink/client.rs`,
-`flusher.rs`, `util/device.rs`, `util/log.rs`, and `main.rs`.
+`flusher.rs`, `schedule.rs`, `util/device.rs`, `util/log.rs`, and `main.rs`.
 
 The frontend tests run under Vitest and live beside the code they cover:
 
@@ -45,6 +45,8 @@ The suite also covers these areas:
 | Nothing worth sending | `ipc/commands.rs` | A note that says nothing of its own never reaches the queue, whether it is empty, whitespace, a tag alone, or a string of tags, and a tagged observation still does |
 | Marker labels | `ipc/commands.rs` | A label that is only a tag names the moment, and a label with text beside it splits into the tag and the rest |
 | One capture per gesture | `src/overlay.ts` | An empty box sends nothing, a repeated Enter sends one capture, a refused note keeps its text on screen, and the next note is still taken |
+| A daily schedule | `schedule.rs` | A target time is read from the clock face, a night the machine slept through is delivered when it wakes, a day already delivered is not delivered again, a clock that moved backwards still delivers, and a marker that cannot be read counts as none |
+| Choosing a mode | `sink/config.rs` | A schedule is read when set, delivery stays on the interval when it is not, and a value that is not a time falls back rather than failing |
 | What one claim takes | `queue/jsonl.rs` | A claim stops at its budget and leaves the rest, what it leaves keeps its place, a batch larger than the budget is still claimed, and a claim inside its budget takes everything |
 | Who can read a capture | `queue/jsonl.rs` | The queue file is created at 0600 in directories at 0700, a directory an earlier version left open is closed, and a deferred batch is written closed |
 | Bounding the archive | `queue/jsonl.rs` | A batch outside the retention period is dropped, an archive over its ceiling gives up its oldest first, a file it cannot date is never deleted, a run that archives nothing still keeps the period, and what was dropped is reported |

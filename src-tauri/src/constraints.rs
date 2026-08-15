@@ -39,6 +39,17 @@ pub const SHUTDOWN_FLUSH_SECS: u64 = 5;
 // interval: 4 x 30s of waiting, plus 2s + 4s + 8s, is 134s against 300s.
 pub const SINK_REQUEST_TIMEOUT_SECS: u64 = 30;
 
+// How many bounded rounds a scheduled delivery runs before it stops.
+//
+// A claim takes at most CLAIM_MAX_EVENTS, so a day that captured more than
+// that needs more than one round to clear. On an interval the next cycle is
+// minutes away and this does not arise; on a nightly schedule the next cycle
+// is a day away, and a backlog would never catch up.
+//
+// A round that delivers nothing, or defers, ends the run. The ceiling is a
+// backstop against a sink that accepts faster than the queue drains.
+pub const MAX_SCHEDULED_ROUNDS: usize = 64;
+
 // How many events one claim takes into memory.
 //
 // A claim used to read every pending file at once. Cap rotation bounds one

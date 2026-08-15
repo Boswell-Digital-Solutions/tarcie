@@ -745,6 +745,52 @@ Step 8 is what keeps delivery honest. A flush that accepted three batches and
 failed on the fourth retries only the fourth; the three the sink already holds
 are not offered again.
 
+## Delivery on a Daily Schedule
+
+When `TARCIE_FLUSH_AT` names a local time, the loop above still ticks on the
+interval, but a tick delivers only when today's delivery is owed. `schedule.rs`
+holds that rule, and it is held against the calendar rather than against
+elapsed time:
+
+- the target time has passed today, **and**
+- today is not the day already recorded
+
+**A missed night is recoverable, which is the point.** An interval only fires
+while the application runs, so a desktop asleep at 02:00 would skip the night
+entirely and an elapsed-time rule would never notice. Because the rule asks
+what day it is, a machine that wakes at 09:00 delivers then.
+
+The day is compared for difference rather than for being earlier. A clock that
+moved backwards would otherwise stop delivery until the date caught up, and the
+contract prefers a duplicate to a night that never arrives. A schedule that has
+never delivered is owed one immediately, so an installation upgrading into a
+schedule does not hold a backlog for a day.
+
+### One delivery, several rounds
+
+A claim takes at most `CLAIM_MAX_EVENTS`, so a day that captured more than one
+claim holds needs more than one round to clear. On the interval the next cycle
+is minutes away and this never arises. On a schedule the next cycle is a day
+away, and a backlog would never catch up.
+
+A scheduled delivery therefore runs bounded rounds until the queue is `Empty`,
+a round defers, or `MAX_SCHEDULED_ROUNDS` is reached. Memory stays bounded,
+because each round is still one bounded claim.
+
+### The day is recorded only when the queue is clear
+
+A deferral leaves the day unrecorded, so the next tick tries again rather than
+waiting out the night on a sink that was briefly unreachable. The marker is
+`last_scheduled_flush.txt` in the data directory, holding one local date.
+
+A marker that cannot be read counts as no marker, which means delivering again.
+That costs a duplicate, which the sink deduplicates on `id`; erring the other
+way costs a night.
+
+**A capture can now sit undelivered for up to a day.** The queue is what makes
+that safe, and section 5 is where to look: the appends are durable, placements
+survive a power loss, and the files are closed to other accounts.
+
 ## Batch Payload
 
 Each HTTP POST sends:
@@ -1113,6 +1159,7 @@ All configuration is via environment variables. There is no config file. Default
 | `TARCIE_ALLOW_REMOTE_SINK` | `false` | If `false`, sink URL must be localhost/127.0.0.1. Safety constraint |
 | `TARCIE_SINK_AUTH` | *(none)* | Optional value for the `Authorization` header on sink requests |
 | `TARCIE_FLUSH_INTERVAL_SECS` | `300` | Seconds between background flush cycles |
+| `TARCIE_FLUSH_AT` | *(none)* | Local `HH:MM` for a daily delivery. When set, the interval becomes how often the schedule is checked |
 | `TARCIE_BATCH_MAX` | `200` | Maximum events per HTTP POST batch |
 | `TARCIE_QUEUE_MAX_EVENTS` | `10000` | Queue cap -- triggers rotation when reached |
 
@@ -1129,6 +1176,23 @@ works, because a value below the floor disables the thing it configures:
 
 An unparsable value is not an error. It falls back to the default, so a typo
 costs the override and not the launch.
+
+## Two Delivery Modes
+
+Leaving `TARCIE_FLUSH_AT` unset keeps the original behaviour: every tick of
+`TARCIE_FLUSH_INTERVAL_SECS` delivers.
+
+Setting it to a local `HH:MM` makes delivery daily. The interval then stops
+meaning "how often to deliver" and becomes "how often to ask whether today's
+delivery is owed", so a target of `02:00` with the default 300-second interval
+delivers within five minutes of two in the morning.
+
+A value that is not a time is not an error. It falls back to the interval and
+says so in the log, because falling back delivers more often rather than less,
+and a typo must not be the reason a night goes missing.
+
+Section 6 describes what a scheduled delivery does when it runs, and why a
+missed night is recoverable.
 
 ## Localhost-Only Default
 
@@ -1196,6 +1260,7 @@ All defined in `constraints.rs`:
 | `DEFAULT_BATCH_MAX` | 200 | Events per HTTP POST |
 | `DEFAULT_QUEUE_MAX_EVENTS` | 10,000 | Queue cap before rotation |
 | `CLAIM_MAX_EVENTS` | 5,000 | How many events one claim takes into memory |
+| `MAX_SCHEDULED_ROUNDS` | 64 | Bounded rounds one scheduled delivery runs |
 | `HOTKEY` | `"Ctrl+Alt+T"` | The capture hotkey, parsed into the registered binding |
 | `HOTKEY_DEBOUNCE_MS` | 500 | Minimum interval between hotkey activations |
 | `SHUTDOWN_FLUSH_SECS` | 5 | How long a close waits for the final flush |
@@ -1223,7 +1288,7 @@ Tarcie has a Rust unit test suite and a frontend unit test suite.
 
 The Rust tests live beside the code they cover, in `#[cfg(test)]` modules in
 `queue/jsonl.rs`, `ipc/commands.rs`, `sink/config.rs`, `sink/client.rs`,
-`flusher.rs`, `util/device.rs`, `util/log.rs`, and `main.rs`.
+`flusher.rs`, `schedule.rs`, `util/device.rs`, `util/log.rs`, and `main.rs`.
 
 The frontend tests run under Vitest and live beside the code they cover:
 
@@ -1262,6 +1327,8 @@ The suite also covers these areas:
 | Nothing worth sending | `ipc/commands.rs` | A note that says nothing of its own never reaches the queue, whether it is empty, whitespace, a tag alone, or a string of tags, and a tagged observation still does |
 | Marker labels | `ipc/commands.rs` | A label that is only a tag names the moment, and a label with text beside it splits into the tag and the rest |
 | One capture per gesture | `src/overlay.ts` | An empty box sends nothing, a repeated Enter sends one capture, a refused note keeps its text on screen, and the next note is still taken |
+| A daily schedule | `schedule.rs` | A target time is read from the clock face, a night the machine slept through is delivered when it wakes, a day already delivered is not delivered again, a clock that moved backwards still delivers, and a marker that cannot be read counts as none |
+| Choosing a mode | `sink/config.rs` | A schedule is read when set, delivery stays on the interval when it is not, and a value that is not a time falls back rather than failing |
 | What one claim takes | `queue/jsonl.rs` | A claim stops at its budget and leaves the rest, what it leaves keeps its place, a batch larger than the budget is still claimed, and a claim inside its budget takes everything |
 | Who can read a capture | `queue/jsonl.rs` | The queue file is created at 0600 in directories at 0700, a directory an earlier version left open is closed, and a deferred batch is written closed |
 | Bounding the archive | `queue/jsonl.rs` | A batch outside the retention period is dropped, an archive over its ceiling gives up its oldest first, a file it cannot date is never deleted, a run that archives nothing still keeps the period, and what was dropped is reported |
@@ -1461,7 +1528,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 110 Rust unit tests and 29 frontend unit tests, and a CI
+The repository has 124 Rust unit tests and 29 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 

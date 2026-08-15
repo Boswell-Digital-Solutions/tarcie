@@ -52,6 +52,7 @@ All defined in `constraints.rs`:
 | `DEFAULT_BATCH_MAX` | 200 | Events per HTTP POST |
 | `DEFAULT_QUEUE_MAX_EVENTS` | 10,000 | Queue cap before rotation |
 | `CLAIM_MAX_EVENTS` | 5,000 | How many events one claim takes into memory |
+| `MAX_SCHEDULED_ROUNDS` | 64 | Bounded rounds one scheduled delivery runs |
 | `HOTKEY` | `"Ctrl+Alt+T"` | The capture hotkey, parsed into the registered binding |
 | `HOTKEY_DEBOUNCE_MS` | 500 | Minimum interval between hotkey activations |
 | `SHUTDOWN_FLUSH_SECS` | 5 | How long a close waits for the final flush |
