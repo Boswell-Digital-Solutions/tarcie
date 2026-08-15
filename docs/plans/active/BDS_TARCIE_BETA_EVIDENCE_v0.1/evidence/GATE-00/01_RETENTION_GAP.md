@@ -142,7 +142,39 @@ runs.
 3. Defer the acknowledgment-bound rule to Phase 3, where it belongs.
 4. Keep encryption at rest as one decision across all four local surfaces.
 
-## 10. Evidence
+## 10. Addendum — three of the four decisions are taken, 2026-08-15
+
+Sections 1 to 9 record the gap while every decision was open. The decision
+owner has since taken three, on the standard that tarcie must sit comfortably on
+an ordinary desktop computer.
+
+| Decision | Taken | Value |
+|---|---|---|
+| Retention period | **Yes** — option 2, age out | `SENT_RETENTION_DAYS` = 90 |
+| Storage cap | **Yes** — option 2, oldest evicted first | `SENT_MAX_BYTES` = 256 MiB |
+| Cleanup receipt | **Yes** — to the existing log | count, bytes, span of stamps |
+| Encryption at rest | **Open** | still one decision across four surfaces |
+
+The values are derived rather than chosen from the air. A typical note is about
+310 bytes on the line, so a hundred captures a day costs roughly 11 MB a year
+and never approaches the ceiling. The ceiling is sized for content that runs to
+`MAX_CONTENT_BYTES`, where the same hundred a day would reach about 370 MB a
+year. On a desktop with a 256 GB disk the ceiling is a tenth of one percent.
+
+Section 8's sequencing held: these three needed no authority the plan grants,
+and they shipped while Board Review 1 remained open. Option 3 — retain until
+acknowledged — is untouched and still belongs to Phase 3, where an
+acknowledgment first exists to retain against.
+
+The bounds are applied where the archive grows, and once at startup so that an
+installation which delivers nothing still keeps the period. A file whose name
+carries no readable stamp is never deleted, because nothing but the archive step
+writes there and deleting what it cannot date is not a capture tool's business.
+
+This addendum records what was decided. It is not itself the decision, and it
+changes no reviewed document.
+
+## 11. Evidence
 
 Verified against tarcie `6e308ff`, 2026-08-14.
 

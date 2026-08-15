@@ -55,6 +55,8 @@ All defined in `constraints.rs`:
 | `HOTKEY_DEBOUNCE_MS` | 500 | Minimum interval between hotkey activations |
 | `SHUTDOWN_FLUSH_SECS` | 5 | How long a close waits for the final flush |
 | `SINK_REQUEST_TIMEOUT_SECS` | 30 | How long one POST to the sink may take |
+| `SENT_RETENTION_DAYS` | 90 | How long a delivered batch stays in the archive |
+| `SENT_MAX_BYTES` | 268,435,456 (256 MiB) | Ceiling on the whole archive |
 | `MAX_LOG_BYTES` | 1,048,576 (1 MiB) | Log size before rotation, per file |
 | `MAX_LOG_LINE_CHARS` | 2,048 | Max length of one log line |
 

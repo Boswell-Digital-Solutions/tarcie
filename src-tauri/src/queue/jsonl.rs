@@ -1,3 +1,4 @@
+use crate::constraints::{SENT_MAX_BYTES, SENT_RETENTION_DAYS};
 use crate::model::TarcieEvent;
 use crate::util::log;
 use crate::util::paths::{queue_dir, sent_dir};
@@ -109,6 +110,75 @@ fn rename_durably(from: &Path, to: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// An archived batch, dated by the stamp in its own name.
+struct ArchivedBatch {
+    path: PathBuf,
+    stamped_at: chrono::DateTime<chrono::Utc>,
+    bytes: u64,
+}
+
+/// What bounding the archive cost, for the record.
+///
+/// Deleting a capture is the one thing tarcie does that a user cannot see and
+/// cannot undo, so it does not happen quietly. The count, the size, and the
+/// span go to the log; what the events said never does, which is the same rule
+/// the rest of the log keeps.
+#[derive(Default, PartialEq, Debug)]
+struct Pruned {
+    files: usize,
+    bytes: u64,
+    oldest: Option<chrono::DateTime<chrono::Utc>>,
+    newest: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl Pruned {
+    fn record(&mut self, batch: &ArchivedBatch) {
+        self.files += 1;
+        self.bytes += batch.bytes;
+        self.oldest.get_or_insert(batch.stamped_at);
+        self.newest = Some(batch.stamped_at);
+    }
+
+    fn report(&self) {
+        if self.files == 0 {
+            return;
+        }
+
+        let span = match (self.oldest, self.newest) {
+            (Some(o), Some(n)) => format!(
+                "{} to {}",
+                o.format("%Y-%m-%dT%H:%M:%SZ"),
+                n.format("%Y-%m-%dT%H:%M:%SZ")
+            ),
+            _ => "unknown".to_string(),
+        };
+
+        log::write(format_args!(
+            "archive bounded, dropped {} delivered batch(es), {} bytes, stamped {}",
+            self.files, self.bytes, span
+        ));
+    }
+}
+
+/// The moment an archived batch was placed, read from its own name.
+///
+/// `queue.sent.{STAMP}.jsonl`, where the stamp is a UTC time to the second
+/// followed by a sequence number. A name that does not take this shape returns
+/// `None`, and its file is left alone.
+fn stamped_at(path: &Path) -> Option<chrono::DateTime<chrono::Utc>> {
+    let name = path.file_name()?.to_str()?;
+    let rest = name.strip_prefix("queue.sent.")?.strip_suffix(".jsonl")?;
+    let (moment, sequence) = rest.rsplit_once('-')?;
+
+    if sequence.is_empty() || !sequence.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+
+    chrono::NaiveDateTime::parse_from_str(moment, "%Y%m%dT%H%M%SZ")
+        .ok()
+        .map(|naive| naive.and_utc())
 }
 
 /// A batch of events taken out of the live queue and held for delivery.
@@ -268,11 +338,116 @@ impl JsonlQueue {
     }
 
     fn archive(&self, files: Vec<PathBuf>) -> Result<()> {
+        let placed = files.len();
+
         for file in files {
             let target = free_path(&self.sent_path, |s| format!("queue.sent.{s}.jsonl"))?;
             rename_durably(&file, &target).context("archive a delivered batch")?;
         }
+
+        // Archiving is the only thing that grows the archive, so it is where
+        // the archive is bounded. A claim that placed nothing skips it: this
+        // runs under the lock that `append` waits on, and reading the whole
+        // directory every flush cycle would put that in the capture path for
+        // no reason. An idle run is caught by the pass at startup instead.
+        if placed > 0 {
+            self.prune_sent();
+        }
+
         Ok(())
+    }
+
+    /// Bound the archive once, at startup.
+    ///
+    /// Without this, an installation that captures nothing never revisits what
+    /// it already holds, and the retention period would go unkept on exactly
+    /// the machines with the least reason to keep the archive at all.
+    pub fn bound_archive(&self) {
+        let _g = self.lock.lock().unwrap();
+        self.prune_sent();
+    }
+
+    /// Bound the archive, and report what that cost.
+    ///
+    /// A delivered batch is kept for `SENT_RETENTION_DAYS`, and the whole
+    /// archive is kept under `SENT_MAX_BYTES`. Whatever falls outside either
+    /// bound is deleted, oldest first.
+    fn prune_sent(&self) -> Pruned {
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(SENT_RETENTION_DAYS);
+        self.prune_sent_to(cutoff, SENT_MAX_BYTES)
+    }
+
+    /// The same bounds, chosen by the caller.
+    ///
+    /// `prune_sent` takes them from the constants and the clock. A test needs
+    /// neither a ninety-day-old file nor a quarter of a gigabyte to prove the
+    /// rule, so it passes its own.
+    fn prune_sent_to(&self, cutoff: chrono::DateTime<chrono::Utc>, max_bytes: u64) -> Pruned {
+        let mut batches = match self.archived_batches() {
+            Ok(b) => b,
+            Err(e) => {
+                log::write(format_args!("could not read the archive to bound it: {e:#}"));
+                return Pruned::default();
+            }
+        };
+
+        // Oldest first, which is both the order they expire in and the order
+        // they are given up in when the archive is too large.
+        batches.sort_by_key(|b| b.stamped_at);
+
+        let mut total: u64 = batches.iter().map(|b| b.bytes).sum();
+        let mut pruned = Pruned::default();
+
+        for batch in &batches {
+            let too_old = batch.stamped_at < cutoff;
+            let too_large = total > max_bytes;
+
+            if !too_old && !too_large {
+                break;
+            }
+
+            match fs::remove_file(&batch.path) {
+                Ok(()) => {
+                    total -= batch.bytes;
+                    pruned.record(batch);
+                }
+                Err(e) => log::write(format_args!(
+                    "could not drop an archived batch: {e}"
+                )),
+            }
+        }
+
+        pruned.report();
+        pruned
+    }
+
+    /// Every archived batch this run can date, with its size.
+    ///
+    /// A file whose name does not carry a stamp this can read is left out, and
+    /// so is never deleted. Nothing else writes to the archive, so such a file
+    /// arrived by hand — and deleting what it cannot date is not something a
+    /// capture tool should do.
+    fn archived_batches(&self) -> Result<Vec<ArchivedBatch>> {
+        let mut out = Vec::new();
+
+        for entry in fs::read_dir(&self.sent_path).context("read the sent dir")? {
+            let entry = entry.context("read a sent dir entry")?;
+            let path = entry.path();
+
+            let Some(stamped_at) = stamped_at(&path) else {
+                continue;
+            };
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if !meta.is_file() {
+                continue;
+            }
+
+            out.push(ArchivedBatch { path, stamped_at, bytes: meta.len() });
+        }
+
+        Ok(out)
     }
 
     fn sending_files(&self) -> Result<Vec<PathBuf>> {
@@ -797,6 +972,143 @@ mod tests {
             "an undelivered batch",
             "nothing was written over it"
         );
+    }
+
+    // --- Bounding the archive ----------------------------------------------
+    //
+    // The archive kept every capture ever made, for the life of the
+    // installation. Nothing in tarcie reads it, so these bounds decide what a
+    // forensic copy is worth keeping.
+
+    /// An archived batch of `bytes` bytes, stamped at `moment`.
+    fn archived(queue: &JsonlQueue, moment: &str, bytes: usize) -> PathBuf {
+        let path = queue
+            .sent_path
+            .join(format!("queue.sent.{moment}-000000.jsonl"));
+        fs::write(&path, "x".repeat(bytes)).expect("write an archived batch");
+        path
+    }
+
+    fn day(stamp: &str) -> chrono::DateTime<chrono::Utc> {
+        chrono::NaiveDateTime::parse_from_str(stamp, "%Y%m%dT%H%M%SZ")
+            .expect("parse the stamp")
+            .and_utc()
+    }
+
+    #[test]
+    fn a_batch_older_than_the_period_is_dropped_and_a_newer_one_is_kept() {
+        let (queue, _dir) = temp_queue();
+        let old = archived(&queue, "20250101T000000Z", 10);
+        let recent = archived(&queue, "20260814T000000Z", 10);
+
+        let pruned = queue.prune_sent_to(day("20260101T000000Z"), u64::MAX);
+
+        assert!(!old.exists(), "the batch outside the period is gone");
+        assert!(recent.exists(), "the batch inside it is kept");
+        assert_eq!(pruned.files, 1);
+        assert_eq!(pruned.bytes, 10);
+    }
+
+    #[test]
+    fn an_archive_over_its_ceiling_gives_up_its_oldest_first() {
+        let (queue, _dir) = temp_queue();
+        let oldest = archived(&queue, "20260101T000000Z", 100);
+        let middle = archived(&queue, "20260601T000000Z", 100);
+        let newest = archived(&queue, "20260801T000000Z", 100);
+
+        // Everything is inside the period, so only the ceiling is at work.
+        let pruned = queue.prune_sent_to(day("20200101T000000Z"), 250);
+
+        assert!(!oldest.exists(), "the oldest goes first");
+        assert!(middle.exists(), "and no more than the ceiling asks for");
+        assert!(newest.exists());
+        assert_eq!(pruned.files, 1);
+    }
+
+    #[test]
+    fn an_archive_inside_both_bounds_is_left_alone() {
+        let (queue, _dir) = temp_queue();
+        let kept = archived(&queue, "20260801T000000Z", 100);
+
+        let pruned = queue.prune_sent_to(day("20200101T000000Z"), u64::MAX);
+
+        assert!(kept.exists());
+        assert_eq!(pruned, Pruned::default(), "nothing was dropped, and nothing reported");
+    }
+
+    #[test]
+    fn a_file_the_archive_cannot_date_is_never_deleted() {
+        // Nothing but `archive` writes here, so a name of another shape
+        // arrived by hand. Deleting what it cannot date is not a capture
+        // tool's business.
+        let (queue, _dir) = temp_queue();
+
+        let strangers = ["notes-i-copied-here.jsonl", "queue.sent.jsonl", "queue.sent.later-000000.jsonl"];
+        for name in strangers {
+            fs::write(queue.sent_path.join(name), "x").expect("plant a stranger");
+        }
+
+        let pruned = queue.prune_sent_to(day("20990101T000000Z"), 0);
+
+        for name in strangers {
+            assert!(
+                queue.sent_path.join(name).exists(),
+                "{name} was not tarcie's to delete"
+            );
+        }
+        assert_eq!(pruned.files, 0);
+    }
+
+    #[test]
+    fn bounding_the_archive_reports_what_it_cost() {
+        // Deleting a capture is the one thing tarcie does that a user cannot
+        // see and cannot undo, so the log carries the count, the size, and the
+        // span — and never what the events said.
+        let (queue, _dir) = temp_queue();
+        archived(&queue, "20250101T000000Z", 40);
+        archived(&queue, "20250201T000000Z", 60);
+
+        let pruned = queue.prune_sent_to(day("20260101T000000Z"), u64::MAX);
+
+        assert_eq!(pruned.files, 2);
+        assert_eq!(pruned.bytes, 100);
+        assert_eq!(pruned.oldest, Some(day("20250101T000000Z")));
+        assert_eq!(pruned.newest, Some(day("20250201T000000Z")));
+    }
+
+    #[test]
+    fn a_delivered_batch_is_bounded_when_it_is_archived() {
+        // The bound is applied where the archive grows, so no separate step
+        // has to remember to run.
+        let (queue, _dir) = temp_queue();
+        let ancient = archived(&queue, "20200101T000000Z", 10);
+
+        queue.append(&note("deliver me"), 1000).expect("append");
+        let claim = queue.claim().expect("claim");
+        queue.complete(claim).expect("complete");
+
+        assert!(
+            !ancient.exists(),
+            "archiving a delivered batch bounds what is already there"
+        );
+        assert_eq!(rotated(&queue).len(), 1, "and the batch just delivered is kept");
+    }
+
+    #[test]
+    fn a_run_that_archives_nothing_still_keeps_the_retention_period() {
+        // The bound is applied where the archive grows, and a run that never
+        // delivers never grows it. Without the pass at startup, the period
+        // would go unkept on exactly the installations holding the most
+        // forgotten captures.
+        let (queue, _dir) = temp_queue();
+        let ancient = queue
+            .sent_path
+            .join("queue.sent.20200101T000000Z-000000.jsonl");
+        fs::write(&ancient, "an old delivered batch").expect("plant it");
+
+        queue.bound_archive();
+
+        assert!(!ancient.exists());
     }
 
     // --- Durable placement -------------------------------------------------

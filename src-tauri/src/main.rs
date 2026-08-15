@@ -75,6 +75,11 @@ fn main() {
 
             let queue = Arc::new(JsonlQueue::new()?);
 
+            // The archive is bounded whenever a batch is added to it. A run
+            // that adds nothing would otherwise never revisit what is already
+            // there, so the retention period is kept here as well.
+            queue.bound_archive();
+
             let sink = SinkClient::new(cfg.url.clone(), cfg.auth.clone())?;
             let flusher = Arc::new(flusher::Flusher::new(
                 Arc::clone(&queue),

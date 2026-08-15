@@ -620,22 +620,56 @@ qualifies on Linux first, so the sync is a no-op there rather than a failure.
 
 ## Retention
 
-The sent directory is never pruned. Nothing in tarcie deletes a file, so every
-event ever captured stays on the disk under `queue/sent/` after it has been
-delivered, for the life of the installation.
+The sent directory is bounded by two rules, applied together:
 
-Two consequences follow, and neither is yet an operator decision that has been
-taken:
+| Bound | Value | Drops |
+|---|---|---|
+| `SENT_RETENTION_DAYS` | 90 days | A batch stamped before the cutoff |
+| `SENT_MAX_BYTES` | 256 MiB | The oldest batches, until the total fits |
 
-- **Disk.** The archive grows without limit. Cap rotation bounds the size of
-  one file and nothing bounds the total.
-- **Retention.** A write-only capture tool keeps a complete plain-text copy of
-  everything the user has captured. Section 8 records that there is no
-  encryption at rest, which this compounds.
+Both are sized for an ordinary desktop. A typical note is about 310 bytes on
+the line, so a hundred captures a day costs roughly 11 MB a year and never
+approaches the ceiling. The ceiling is for content that runs to
+`MAX_CONTENT_BYTES`, where the same hundred a day would reach about 370 MB a
+year.
 
-Whether the archive is a safety net worth its cost, or should age out, is a
-decision for the operator. Tarcie does not take it, and this section exists so
-that the decision is made rather than inherited.
+The archive used to keep every event ever captured, for the life of the
+installation. That was unbounded disk, and a complete plain-text copy of
+everything the user had captured on a tool with no encryption at rest.
+
+### What the archive is for
+
+Nothing in tarcie reads it. The tool is write-only, so the archive cannot be
+searched, resent, or displayed, and recovering anything from it means a person
+opening files by hand.
+
+It is therefore forensic, not a safety net. The durability contract — a capture
+survives an unreachable sink — is kept by `queue.jsonl` and `sending/`, which
+both sit before delivery. The archive is entirely after it.
+
+### When the bounds are applied
+
+- **Whenever a batch is archived.** Archiving is the only thing that grows the
+  archive, so it is where the archive is bounded. A claim that placed nothing
+  skips the pass: it runs under the lock `append` waits on, and reading the
+  whole directory every flush cycle would put that in the capture path for no
+  reason.
+- **Once at startup.** A run that delivers nothing never grows the archive and
+  would never revisit it, so the retention period would go unkept on exactly
+  the installations holding the most forgotten captures.
+
+### What is never deleted
+
+A file whose name does not carry a stamp this can read. Nothing but the archive
+step writes to that directory, so a name of another shape arrived by hand, and
+deleting what it cannot date is not a capture tool's business.
+
+### The record
+
+Deleting a capture is the one thing tarcie does that a user cannot see and
+cannot undo, so it is never silent. One log line carries the count, the byte
+total, and the span of stamps removed. What the events said never appears,
+which is the rule the rest of the log already keeps.
 
 ## Capacity
 
@@ -811,6 +845,7 @@ run from a terminal still shows them.
 - a background flush error
 - a queue line that did not parse, by line number
 - a queue that reached its cap
+- what bounding the archive dropped, by count, bytes, and span of stamps
 - a device ID file that could not be read
 
 **No capture content is ever written to the log.** The log records what happened
@@ -1126,6 +1161,8 @@ All defined in `constraints.rs`:
 | `HOTKEY_DEBOUNCE_MS` | 500 | Minimum interval between hotkey activations |
 | `SHUTDOWN_FLUSH_SECS` | 5 | How long a close waits for the final flush |
 | `SINK_REQUEST_TIMEOUT_SECS` | 30 | How long one POST to the sink may take |
+| `SENT_RETENTION_DAYS` | 90 | How long a delivered batch stays in the archive |
+| `SENT_MAX_BYTES` | 268,435,456 (256 MiB) | Ceiling on the whole archive |
 | `MAX_LOG_BYTES` | 1,048,576 (1 MiB) | Log size before rotation, per file |
 | `MAX_LOG_LINE_CHARS` | 2,048 | Max length of one log line |
 
@@ -1186,6 +1223,7 @@ The suite also covers these areas:
 | Nothing worth sending | `ipc/commands.rs` | A note that says nothing of its own never reaches the queue, whether it is empty, whitespace, a tag alone, or a string of tags, and a tagged observation still does |
 | Marker labels | `ipc/commands.rs` | A label that is only a tag names the moment, and a label with text beside it splits into the tag and the rest |
 | One capture per gesture | `src/overlay.ts` | An empty box sends nothing, a repeated Enter sends one capture, a refused note keeps its text on screen, and the next note is still taken |
+| Bounding the archive | `queue/jsonl.rs` | A batch outside the retention period is dropped, an archive over its ceiling gives up its oldest first, a file it cannot date is never deleted, a run that archives nothing still keeps the period, and what was dropped is reported |
 | Durable placement | `queue/jsonl.rs` | A placement moves the file and neither directory sync errors, and a placement that cannot happen leaves the batch where it was |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
 | Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes and hides the overlay, and the box is cleared only by a confirmed capture that took it |
@@ -1233,6 +1271,10 @@ accept the first batch. It runs through `flusher_unbounded`, with no bound for
 the paused clock to jump to. The paused test beside it holds the opposite
 ground: with no bound in `SinkClient::new` there is no deadline at all, the
 flush never returns, and its guard reports that rather than hanging the suite.
+
+`prune_sent_to` takes the cutoff and the ceiling directly, so a test proves
+the rule without a ninety-day-old file or a quarter of a gigabyte to fill.
+`prune_sent` supplies the constants and the clock.
 
 `LogFile::with_ceiling` takes the size ceiling directly, so a test proves the
 rotation without writing a megabyte to do it. The tests build a `LogFile` in a
@@ -1375,7 +1417,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 96 Rust unit tests and 29 frontend unit tests, and a CI
+The repository has 103 Rust unit tests and 29 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -1399,11 +1441,11 @@ and what they do not.
   size of one file, not the number of files, and a claim reads every one of
   them into memory. A sink that stays down therefore costs disk and memory.
   The contract prefers that to discarding a capture.
-- **The sent archive is never pruned.** Nothing in tarcie deletes a file, so
-  every delivered event stays on the disk under `queue/sent/` for the life of
-  the installation. That is unbounded disk, and a complete plain-text copy of
-  every capture, on a tool that has no encryption at rest. Section 5 records
-  the decision this leaves open.
+- **The archive holds plain text, bounded but unencrypted.** A delivered batch
+  is kept for 90 days, and the archive as a whole under 256 MiB, so it no
+  longer grows for the life of the installation. What it holds is still a
+  plain-text copy of recent captures: there is no encryption at rest, and that
+  decision stays open across the queue, archive, log, and device ID alike.
 - **A crash between a partial delivery and its archive duplicates the
   remainder.** The undelivered events are written back before the originals are
   archived, so a crash between those two steps offers the remainder again. This
