@@ -29,7 +29,7 @@ current implementation reality.
 
 **Delivered:**
 
-- 106 Rust unit tests across `queue/jsonl.rs`, `ipc/commands.rs`,
+- 110 Rust unit tests across `queue/jsonl.rs`, `ipc/commands.rs`,
   `sink/config.rs`, `sink/client.rs`, `flusher.rs`, `util/device.rs`,
   `util/log.rs`, and `main.rs`
 - 29 frontend unit tests across `src/capture.ts` and `src/overlay.ts`, under

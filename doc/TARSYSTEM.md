@@ -551,6 +551,23 @@ A claim also picks up every file already in `sending/`, oldest first. A flush
 that was interrupted leaves its batch there, and the next claim recovers it.
 The cost of a crash is a retry, not a capture.
 
+A claim takes at most `CLAIM_MAX_EVENTS` (5,000), oldest file first. What it
+leaves stays in `sending/` for the next cycle.
+
+Without a budget a claim read every pending file at once. Cap rotation bounds
+one file at `DEFAULT_QUEUE_MAX_EVENTS` and nothing bounds the number of files,
+so a backlog was parsed in full on every flush cycle for as long as it stood.
+A backlog is not exotic: the default sink is a loopback port nothing serves, so
+an installation nobody has configured accumulates from the first capture.
+
+The budget costs a delay and never a capture. Files are taken in the order they
+were placed, so delivery still follows the clock, and at the default interval a
+backlog drains at about sixty thousand events an hour.
+
+The budget is checked between files rather than inside one, so the first file is
+always taken whatever its size. A file larger than the budget would otherwise be
+claimed by nobody, and the events in it would sit in `sending/` for good.
+
 The claim ends one of two ways:
 
 - **Complete.** Every event reached the sink. Each claim file is renamed to
@@ -1178,6 +1195,7 @@ All defined in `constraints.rs`:
 | `MIN_FLUSH_INTERVAL_SECS` | 1 | Floor under the flush interval |
 | `DEFAULT_BATCH_MAX` | 200 | Events per HTTP POST |
 | `DEFAULT_QUEUE_MAX_EVENTS` | 10,000 | Queue cap before rotation |
+| `CLAIM_MAX_EVENTS` | 5,000 | How many events one claim takes into memory |
 | `HOTKEY` | `"Ctrl+Alt+T"` | The capture hotkey, parsed into the registered binding |
 | `HOTKEY_DEBOUNCE_MS` | 500 | Minimum interval between hotkey activations |
 | `SHUTDOWN_FLUSH_SECS` | 5 | How long a close waits for the final flush |
@@ -1244,6 +1262,7 @@ The suite also covers these areas:
 | Nothing worth sending | `ipc/commands.rs` | A note that says nothing of its own never reaches the queue, whether it is empty, whitespace, a tag alone, or a string of tags, and a tagged observation still does |
 | Marker labels | `ipc/commands.rs` | A label that is only a tag names the moment, and a label with text beside it splits into the tag and the rest |
 | One capture per gesture | `src/overlay.ts` | An empty box sends nothing, a repeated Enter sends one capture, a refused note keeps its text on screen, and the next note is still taken |
+| What one claim takes | `queue/jsonl.rs` | A claim stops at its budget and leaves the rest, what it leaves keeps its place, a batch larger than the budget is still claimed, and a claim inside its budget takes everything |
 | Who can read a capture | `queue/jsonl.rs` | The queue file is created at 0600 in directories at 0700, a directory an earlier version left open is closed, and a deferred batch is written closed |
 | Bounding the archive | `queue/jsonl.rs` | A batch outside the retention period is dropped, an archive over its ceiling gives up its oldest first, a file it cannot date is never deleted, a run that archives nothing still keeps the period, and what was dropped is reported |
 | Durable placement | `queue/jsonl.rs` | A placement moves the file and neither directory sync errors, and a placement that cannot happen leaves the batch where it was |
@@ -1293,6 +1312,9 @@ accept the first batch. It runs through `flusher_unbounded`, with no bound for
 the paused clock to jump to. The paused test beside it holds the opposite
 ground: with no bound in `SinkClient::new` there is no deadline at all, the
 flush never returns, and its guard reports that rather than hanging the suite.
+
+`claim_up_to` takes the budget directly, so a test proves the rule with a
+handful of events rather than planting five thousand to reach the real one.
 
 `prune_sent_to` takes the cutoff and the ceiling directly, so a test proves
 the rule without a ninety-day-old file or a quarter of a gigabyte to fill.
@@ -1439,7 +1461,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 106 Rust unit tests and 29 frontend unit tests, and a CI
+The repository has 110 Rust unit tests and 29 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -1459,10 +1481,12 @@ and what they do not.
   window toggle, the shutdown flush, and the DOM wiring do not: the first three
   need a running desktop session, and the fourth needs a DOM in the test run.
   Section 10 lists what stays uncovered.
-- **The queue grows while the sink is unreachable.** Cap rotation bounds the
-  size of one file, not the number of files, and a claim reads every one of
-  them into memory. A sink that stays down therefore costs disk and memory.
-  The contract prefers that to discarding a capture.
+- **The queue grows on disk while the sink is unreachable.** Cap rotation
+  bounds the size of one file and nothing bounds the number of files, so a sink
+  that stays down costs disk without limit. The contract prefers that to
+  discarding a capture, and undelivered events cannot age out the way delivered
+  ones do. Memory is bounded: a claim takes at most `CLAIM_MAX_EVENTS`, so the
+  backlog is no longer parsed in full on every cycle.
 - **Captures are stored in plain text.** The queue and the archive hold notes
   verbatim. Both are closed to other accounts by their directory modes, and the
   archive is bounded at 90 days and 256 MiB, so it no longer grows for the life

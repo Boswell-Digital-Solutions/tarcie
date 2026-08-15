@@ -45,6 +45,7 @@ The suite also covers these areas:
 | Nothing worth sending | `ipc/commands.rs` | A note that says nothing of its own never reaches the queue, whether it is empty, whitespace, a tag alone, or a string of tags, and a tagged observation still does |
 | Marker labels | `ipc/commands.rs` | A label that is only a tag names the moment, and a label with text beside it splits into the tag and the rest |
 | One capture per gesture | `src/overlay.ts` | An empty box sends nothing, a repeated Enter sends one capture, a refused note keeps its text on screen, and the next note is still taken |
+| What one claim takes | `queue/jsonl.rs` | A claim stops at its budget and leaves the rest, what it leaves keeps its place, a batch larger than the budget is still claimed, and a claim inside its budget takes everything |
 | Who can read a capture | `queue/jsonl.rs` | The queue file is created at 0600 in directories at 0700, a directory an earlier version left open is closed, and a deferred batch is written closed |
 | Bounding the archive | `queue/jsonl.rs` | A batch outside the retention period is dropped, an archive over its ceiling gives up its oldest first, a file it cannot date is never deleted, a run that archives nothing still keeps the period, and what was dropped is reported |
 | Durable placement | `queue/jsonl.rs` | A placement moves the file and neither directory sync errors, and a placement that cannot happen leaves the batch where it was |
@@ -94,6 +95,9 @@ accept the first batch. It runs through `flusher_unbounded`, with no bound for
 the paused clock to jump to. The paused test beside it holds the opposite
 ground: with no bound in `SinkClient::new` there is no deadline at all, the
 flush never returns, and its guard reports that rather than hanging the suite.
+
+`claim_up_to` takes the budget directly, so a test proves the rule with a
+handful of events rather than planting five thousand to reach the real one.
 
 `prune_sent_to` takes the cutoff and the ceiling directly, so a test proves
 the rule without a ninety-day-old file or a quarter of a gigabyte to fill.
