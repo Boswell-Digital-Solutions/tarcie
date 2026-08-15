@@ -1,0 +1,21 @@
+{
+  "schema_version": "bds.plan-registry-entry.v1",
+  "plan_id": "BDS-TARCIE-BETA-EVIDENCE-v0.2",
+  "title": "Tarcie Guided Beta Sessions, Preloaded Assignments, and Writable Closeout Reports",
+  "version": "0.2",
+  "lifecycle_status": "proposed_for_board_review_1",
+  "authority_status": "documentation_only_candidate",
+  "decision_owner": "Charlie Boswell",
+  "canonical_owner": "Boswell-Digital-Solutions/tarcie",
+  "primary_consumer": "Boswell-Digital-Solutions/Forge_Command",
+  "first_test_target": "Boswell-Digital-Solutions/Author-Forge",
+  "candidate_store": "Boswell-Digital-Solutions/dataforge-Local",
+  "predecessor_plan_id": "BDS-TARCIE-BETA-EVIDENCE-v0.1",
+  "predecessor_remains_controlling": true,
+  "supersession_requires_explicit_board_decision": true,
+  "platform_requirement": ["windows", "macos", "linux"],
+  "registration_effect": "Registers a review candidate only; grants no implementation, capture, delivery, storage, issue, agent, beta, or release authority.",
+  "next_gate": "board_review_1_then_gate_00",
+  "created_at": "2026-08-15"
+}
+

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.boswelldigitalsolutions.com/tarcie/session-bundle-manifest.v1.schema.json",
+  "title": "TarcieSessionBundleManifest.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "bundle_id", "bundle_version", "profile_path", "assignment_path", "files", "created_at", "expires_at", "producer_id", "canonical_payload_sha256"],
+  "properties": {
+    "schema_version": {"const": "TarcieSessionBundleManifest.v1"},
+    "bundle_id": {"type": "string", "format": "uuid"},
+    "bundle_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+    "profile_path": {"type": "string", "const": "profile.json"},
+    "assignment_path": {"type": "string", "const": "assignment.json"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "producer_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "canonical_payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "files": {
+      "type": "array", "minItems": 2, "maxItems": 200,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "media_type", "byte_length", "sha256"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]{1,240}$"},
+          "media_type": {"enum": ["application/json", "text/plain", "text/markdown", "image/png", "image/jpeg"]},
+          "byte_length": {"type": "integer", "minimum": 0, "maximum": 10485760},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    }
+  }
+}
+

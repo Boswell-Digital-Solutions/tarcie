@@ -1,0 +1,26 @@
+{
+  "schema_version": "TarcieSessionBundleManifest.v1",
+  "bundle_id": "44444444-4444-4444-8444-444444444444",
+  "bundle_version": "1.0",
+  "profile_path": "profile.json",
+  "assignment_path": "assignment.json",
+  "created_at": "2026-08-15T06:30:00Z",
+  "expires_at": "2026-12-31T23:59:59Z",
+  "producer_id": "forge-command-synthetic-fixture",
+  "canonical_payload_sha256": "ec821ebd1b9167cf2a2a48b4ffa1123d9db16ca5f2e26b126630ad0c43884499",
+  "files": [
+    {
+      "path": "assignment.json",
+      "media_type": "application/json",
+      "byte_length": 1026,
+      "sha256": "0914c0778f0c275ef95344a68c4f325f010155606be692690c35aabee75b5999"
+    },
+    {
+      "path": "profile.json",
+      "media_type": "application/json",
+      "byte_length": 2208,
+      "sha256": "8e1e69cfe4e58fb57f76e322c754c97420b467a53d19a0da57d0bf97af82d8fd"
+    }
+  ]
+}
+

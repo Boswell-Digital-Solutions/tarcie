@@ -1,0 +1,47 @@
+{
+  "schema_version": "ProductBetaProfile.v1",
+  "profile_id": "11111111-1111-4111-8111-111111111111",
+  "product_id": "author_forge",
+  "application_id": "com.boswell.authorforge",
+  "display_name": "Author_Forge",
+  "profile_version": "1.0",
+  "supported_platforms": ["windows", "macos", "linux"],
+  "sections": [
+    {
+      "section_id": "launch_and_hearth",
+      "name": "Launch and Hearth",
+      "purpose": "Confirm installation, startup, orientation, and visible degraded states.",
+      "evidence_prompts": ["What did you expect on first launch?", "What was unclear or blocked?"],
+      "guardrails": ["Use the synthetic project only.", "Do not enter credentials or personal manuscript content."]
+    },
+    {
+      "section_id": "project_creation",
+      "name": "Project Creation",
+      "purpose": "Create and reopen the disposable beta project through normal user surfaces.",
+      "evidence_prompts": ["Could you tell when the project was safely saved?", "Were any required choices confusing?"],
+      "guardrails": ["Do not import a real manuscript."]
+    },
+    {
+      "section_id": "smithy_editor",
+      "name": "Smithy Editor",
+      "purpose": "Exercise ordinary editing, navigation, and recovery with synthetic prose.",
+      "evidence_prompts": ["Describe any lag, lost input, or unexpected navigation.", "Could you recover from an intentional close/reopen?"],
+      "guardrails": ["Use only the supplied synthetic prose."]
+    },
+    {
+      "section_id": "foundry_structure",
+      "name": "Foundry Structure",
+      "purpose": "Review chapter/scene structure and the visible status of local parsing.",
+      "evidence_prompts": ["Were required and optional services understandable?", "Did any state appear complete when it was not?"],
+      "guardrails": ["Do not bypass the UI with direct API or file manipulation."]
+    },
+    {
+      "section_id": "export_and_close",
+      "name": "Export and Close",
+      "purpose": "Create a disposable export, close cleanly, and reopen the project.",
+      "evidence_prompts": ["Was the export location and completion state clear?", "What remained unresolved?"],
+      "guardrails": ["Export only the synthetic beta project."]
+    }
+  ]
+}
+

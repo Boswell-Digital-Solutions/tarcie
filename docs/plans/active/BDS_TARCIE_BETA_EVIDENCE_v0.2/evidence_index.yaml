@@ -1,0 +1,58 @@
+schema_version: "bds.evidence-index.v1"
+plan_id: "BDS-TARCIE-BETA-EVIDENCE-v0.2"
+prepared_at: "2026-08-15"
+evidence_posture: "source_observation_and_documentation_prototype_only"
+items:
+  - id: "EV-SOURCE-TARCIE-HEAD"
+    class: "connector_observation"
+    subject: "Boswell-Digital-Solutions/tarcie main"
+    value: "7ad58c601312baaf9880bc3120a47e1b77bb34ed"
+    reproduced: false
+  - id: "EV-SOURCE-AUTHORFORGE-HEAD"
+    class: "connector_observation"
+    subject: "Boswell-Digital-Solutions/Author-Forge main"
+    value: "5b7765113ead1465f4d8a3802abfc7e34e8a9b07"
+    reproduced: false
+  - id: "EV-SOURCE-FORGECOMMAND-HEAD"
+    class: "connector_observation"
+    subject: "Boswell-Digital-Solutions/Forge_Command main"
+    value: "87fd7f11ad088079949f15a17752c93c29782fdb"
+    reproduced: false
+  - id: "EV-SOURCE-DATAFORGELOCAL-HEAD"
+    class: "connector_observation"
+    subject: "Boswell-Digital-Solutions/dataforge-Local master"
+    value: "6c07d13d31a6f6c07789cc23429d1b474ec0816a"
+    reproduced: false
+  - id: "EV-LINEAGE-V01-BR1"
+    class: "governance_record"
+    subject: "BDS-TARCIE-BETA-EVIDENCE-v0.1 Board Review 1"
+    value: "AUTHORIZED_WITH_FAIL_CLOSED_CONDITIONS on 2026-08-14 for Phase 0 and documentation-only Phase 1"
+    reproduced: true
+  - id: "EV-PDF-PROTOTYPE"
+    class: "non_operative_documentation_prototype"
+    subject: "BetaSessionReport.v1 fillable PDF concept"
+    path: "templates/Beta_Session_Report_v1_FILLABLE_PROTOTYPE.pdf"
+    implementation_evidence: false
+  - id: "EV-REVIEW-PACKET"
+    class: "board_review_packet"
+    subject: "v0.2 Board Review 1 request"
+    path: "review_packet.pdf"
+    implementation_evidence: false
+  - id: "EV-PDF-VALIDATION"
+    class: "documentation_prototype_validation"
+    subject: "Logical and rendered visual checks for both PDFs"
+    path: "PDF_VALIDATION_REPORT.json"
+    implementation_evidence: false
+  - id: "EV-REPORT-FIXTURE"
+    class: "synthetic_schema_fixture"
+    subject: "BetaSessionReport.v1 post-session example"
+    path: "fixtures/author_forge_session/sample_report.json"
+    implementation_evidence: false
+claims_not_established:
+  - "Tarcie Windows support"
+  - "Tarcie macOS support"
+  - "Tarcie session package loading"
+  - "Tarcie writable PDF runtime"
+  - "Author_Forge installed core-workflow parity across three platforms"
+  - "Forge_Command receiver ownership"
+  - "DataForge Local production persistence contract"

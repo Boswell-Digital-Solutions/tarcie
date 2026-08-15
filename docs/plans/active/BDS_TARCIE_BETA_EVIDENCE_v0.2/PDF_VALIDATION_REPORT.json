@@ -1,0 +1,35 @@
+{
+  "validation_version": "1.0",
+  "validated_at": "2026-08-15",
+  "disposition": "pass_documentation_prototypes",
+  "files": [
+    {
+      "path": "review_packet.pdf",
+      "sha256": "eeaabc728c9227aab455f52c8046ee8cb727910d0a8782535e00e2ee6821c9c4",
+      "byte_length": 53528,
+      "pages": 4,
+      "page_size": "US Letter",
+      "visual_review": "pass_no_clipping_overlap_or_unreadable_text"
+    },
+    {
+      "path": "templates/Beta_Session_Report_v1_FILLABLE_PROTOTYPE.pdf",
+      "sha256": "3ba4a0163052246898eb7a75db958a49d9e741c60a30338cc58a40bc9f3ccbf4",
+      "byte_length": 93778,
+      "pages": 4,
+      "page_size": "US Letter",
+      "acroform_fields": 21,
+      "page_widgets": 21,
+      "all_widgets_have_appearance_streams": true,
+      "pdf_field_map_version_metadata": "1.0",
+      "writable_text_roundtrip_fields": 5,
+      "prohibited_active_features": "absent",
+      "javascript": false,
+      "visual_review": "pass_no_clipping_overlap_or_unreadable_text"
+    }
+  ],
+  "notes": [
+    "The fillable report contains synthetic values and is a non-operative documentation prototype.",
+    "Validation does not establish runtime save/reopen parity on Windows, macOS, and Linux; that remains gated qualification work.",
+    "The original built-in-font rendering was rejected during visual QA; the final static PDF text uses embedded fonts."
+  ]
+}
