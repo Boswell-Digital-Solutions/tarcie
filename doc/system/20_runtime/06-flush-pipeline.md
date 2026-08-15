@@ -24,6 +24,52 @@ Step 8 is what keeps delivery honest. A flush that accepted three batches and
 failed on the fourth retries only the fourth; the three the sink already holds
 are not offered again.
 
+## Delivery on a Daily Schedule
+
+When `TARCIE_FLUSH_AT` names a local time, the loop above still ticks on the
+interval, but a tick delivers only when today's delivery is owed. `schedule.rs`
+holds that rule, and it is held against the calendar rather than against
+elapsed time:
+
+- the target time has passed today, **and**
+- today is not the day already recorded
+
+**A missed night is recoverable, which is the point.** An interval only fires
+while the application runs, so a desktop asleep at 02:00 would skip the night
+entirely and an elapsed-time rule would never notice. Because the rule asks
+what day it is, a machine that wakes at 09:00 delivers then.
+
+The day is compared for difference rather than for being earlier. A clock that
+moved backwards would otherwise stop delivery until the date caught up, and the
+contract prefers a duplicate to a night that never arrives. A schedule that has
+never delivered is owed one immediately, so an installation upgrading into a
+schedule does not hold a backlog for a day.
+
+### One delivery, several rounds
+
+A claim takes at most `CLAIM_MAX_EVENTS`, so a day that captured more than one
+claim holds needs more than one round to clear. On the interval the next cycle
+is minutes away and this never arises. On a schedule the next cycle is a day
+away, and a backlog would never catch up.
+
+A scheduled delivery therefore runs bounded rounds until the queue is `Empty`,
+a round defers, or `MAX_SCHEDULED_ROUNDS` is reached. Memory stays bounded,
+because each round is still one bounded claim.
+
+### The day is recorded only when the queue is clear
+
+A deferral leaves the day unrecorded, so the next tick tries again rather than
+waiting out the night on a sink that was briefly unreachable. The marker is
+`last_scheduled_flush.txt` in the data directory, holding one local date.
+
+A marker that cannot be read counts as no marker, which means delivering again.
+That costs a duplicate, which the sink deduplicates on `id`; erring the other
+way costs a night.
+
+**A capture can now sit undelivered for up to a day.** The queue is what makes
+that safe, and section 5 is where to look: the appends are durable, placements
+survive a power loss, and the files are closed to other accounts.
+
 ## Batch Payload
 
 Each HTTP POST sends:

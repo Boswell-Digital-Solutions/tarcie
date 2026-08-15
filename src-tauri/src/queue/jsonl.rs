@@ -1,4 +1,4 @@
-use crate::constraints::{SENT_MAX_BYTES, SENT_RETENTION_DAYS};
+use crate::constraints::{CLAIM_MAX_EVENTS, SENT_MAX_BYTES, SENT_RETENTION_DAYS};
 use crate::model::TarcieEvent;
 use crate::util::log;
 use crate::util::paths::{owner_only_dir, owner_only_file, queue_dir, sent_dir};
@@ -288,6 +288,15 @@ impl JsonlQueue {
     /// an interrupted flush is picked up here too, oldest first, so a crash
     /// costs a retry rather than a capture.
     pub fn claim(&self) -> Result<Claim> {
+        self.claim_up_to(CLAIM_MAX_EVENTS)
+    }
+
+    /// The same claim with the budget chosen by the caller.
+    ///
+    /// `claim` supplies `CLAIM_MAX_EVENTS`. A test proves the rule with a
+    /// budget of a handful rather than planting five thousand events to reach
+    /// the real one.
+    fn claim_up_to(&self, max_events: usize) -> Result<Claim> {
         let _g = self.lock.lock().unwrap();
 
         if self.queue_path.exists() {
@@ -295,12 +304,28 @@ impl JsonlQueue {
             rename_durably(&self.queue_path, &target).context("claim the queue file")?;
         }
 
-        let mut files = self.sending_files()?;
-        files.sort();
+        let mut pending = self.sending_files()?;
+        pending.sort();
 
+        // Oldest first, and only as much as `CLAIM_MAX_EVENTS` allows. What is
+        // left stays in `sending/` for the next cycle: a claim that takes less
+        // costs a delay, never a capture, and delivery order still follows the
+        // clock because the files are taken in the order they were placed.
+        //
+        // The budget is checked between files rather than inside one, so the
+        // first file is always taken whatever its size. A file larger than the
+        // budget would otherwise be claimed by nobody, and the events in it
+        // would sit in `sending/` for good.
+        let mut files = Vec::new();
         let mut events = Vec::new();
-        for file in &files {
-            events.extend(read_tolerant(file)?);
+
+        for file in pending {
+            if !files.is_empty() && events.len() >= max_events {
+                break;
+            }
+
+            events.extend(read_tolerant(&file)?);
+            files.push(file);
         }
 
         Ok(Claim { files, events })
@@ -973,6 +998,78 @@ mod tests {
             "an undelivered batch",
             "nothing was written over it"
         );
+    }
+
+    // --- What one claim takes ----------------------------------------------
+    //
+    // A claim used to read every pending file at once. Cap rotation bounds one
+    // file and nothing bounds the number of files, so a backlog was parsed in
+    // full on every cycle for as long as it stood.
+
+    /// Plant a batch in `sending/` under a stamp that sorts where it is put.
+    fn pending_batch(queue: &JsonlQueue, stamp: &str, contents: &[&str]) {
+        let events: Vec<TarcieEvent> = contents.iter().map(|c| note(c)).collect();
+        write_events(&queue.sending_dir.join(format!("{stamp}-000000.jsonl")), &events)
+            .expect("plant a pending batch");
+    }
+
+    fn claimed(claim: &Claim) -> Vec<String> {
+        claim.events().iter().map(|e| e.content.clone()).collect()
+    }
+
+    #[test]
+    fn a_claim_stops_at_its_budget_and_leaves_the_rest_behind() {
+        let (queue, _dir) = temp_queue();
+        pending_batch(&queue, "20260101T000000Z", &["a1", "a2"]);
+        pending_batch(&queue, "20260102T000000Z", &["b1", "b2"]);
+        pending_batch(&queue, "20260103T000000Z", &["c1", "c2"]);
+
+        // The budget is checked between files, so the second batch is taken
+        // and the third is what the budget stops.
+        let claim = queue.claim_up_to(3).expect("claim");
+
+        assert_eq!(claimed(&claim), ["a1", "a2", "b1", "b2"]);
+    }
+
+    #[test]
+    fn what_a_claim_leaves_keeps_its_place_for_the_next_one() {
+        // A claim that takes less costs a delay, never a capture, and the
+        // order still follows the clock across the two cycles.
+        let (queue, _dir) = temp_queue();
+        pending_batch(&queue, "20260101T000000Z", &["a1", "a2"]);
+        pending_batch(&queue, "20260102T000000Z", &["b1", "b2"]);
+        pending_batch(&queue, "20260103T000000Z", &["c1", "c2"]);
+
+        let first = queue.claim_up_to(3).expect("claim");
+        queue.complete(first).expect("complete");
+
+        let second = queue.claim_up_to(3).expect("claim again");
+
+        assert_eq!(claimed(&second), ["c1", "c2"], "the rest, still in order");
+    }
+
+    #[test]
+    fn a_batch_larger_than_the_budget_is_still_claimed() {
+        // The first file is taken whatever its size. A file over the budget
+        // would otherwise be claimed by nobody, and the events in it would sit
+        // in sending/ for good.
+        let (queue, _dir) = temp_queue();
+        pending_batch(&queue, "20260101T000000Z", &["a1", "a2", "a3", "a4", "a5"]);
+
+        let claim = queue.claim_up_to(2).expect("claim");
+
+        assert_eq!(claimed(&claim), ["a1", "a2", "a3", "a4", "a5"]);
+    }
+
+    #[test]
+    fn a_claim_inside_its_budget_takes_everything_pending() {
+        let (queue, _dir) = temp_queue();
+        pending_batch(&queue, "20260101T000000Z", &["a1"]);
+        pending_batch(&queue, "20260102T000000Z", &["b1"]);
+
+        let claim = queue.claim_up_to(1000).expect("claim");
+
+        assert_eq!(claimed(&claim), ["a1", "b1"]);
     }
 
     // --- Who can read a capture --------------------------------------------

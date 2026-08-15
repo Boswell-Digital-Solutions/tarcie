@@ -39,6 +39,32 @@ pub const SHUTDOWN_FLUSH_SECS: u64 = 5;
 // interval: 4 x 30s of waiting, plus 2s + 4s + 8s, is 134s against 300s.
 pub const SINK_REQUEST_TIMEOUT_SECS: u64 = 30;
 
+// How many bounded rounds a scheduled delivery runs before it stops.
+//
+// A claim takes at most CLAIM_MAX_EVENTS, so a day that captured more than
+// that needs more than one round to clear. On an interval the next cycle is
+// minutes away and this does not arise; on a nightly schedule the next cycle
+// is a day away, and a backlog would never catch up.
+//
+// A round that delivers nothing, or defers, ends the run. The ceiling is a
+// backstop against a sink that accepts faster than the queue drains.
+pub const MAX_SCHEDULED_ROUNDS: usize = 64;
+
+// How many events one claim takes into memory.
+//
+// A claim used to read every pending file at once. Cap rotation bounds one
+// file at DEFAULT_QUEUE_MAX_EVENTS and nothing bounds the number of files, so
+// a backlog was parsed in full on every flush cycle, for as long as it stood.
+//
+// A backlog is not exotic. The default sink is a loopback port nothing serves,
+// so an installation nobody has configured accumulates from the first capture.
+//
+// Nothing is dropped to hold this. A claim takes the oldest events, and what it
+// leaves stays in sending/ for the next cycle. At the default interval this
+// drains about sixty thousand events an hour, which is far faster than any
+// backlog can build.
+pub const CLAIM_MAX_EVENTS: usize = 5_000;
+
 // How long a delivered batch stays in the archive, and how much of it is kept.
 //
 // The archive held every capture ever made, for the life of the installation.

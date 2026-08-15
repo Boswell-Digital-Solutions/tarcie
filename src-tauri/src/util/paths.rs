@@ -74,3 +74,8 @@ pub fn device_id_path() -> Result<PathBuf> {
 pub fn logs_dir() -> Result<PathBuf> {
     Ok(app_data_dir()?.join("logs"))
 }
+
+/// Where the day of the last scheduled delivery is recorded.
+pub fn schedule_marker_path() -> Result<PathBuf> {
+    Ok(app_data_dir()?.join("last_scheduled_flush.txt"))
+}

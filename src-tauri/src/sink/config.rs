@@ -1,5 +1,7 @@
 use crate::constraints::*;
+use crate::schedule::parse_time_of_day;
 use anyhow::{Context, Result};
+use chrono::NaiveTime;
 use std::env;
 use url::{Host, Url};
 
@@ -9,6 +11,7 @@ pub struct SinkConfig {
     pub auth: Option<String>,
     pub allow_remote: bool,
     pub flush_interval_secs: u64,
+    pub flush_at: Option<NaiveTime>,
     pub batch_max: usize,
     pub queue_max_events: usize,
 }
@@ -56,6 +59,23 @@ impl SinkConfig {
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_FLUSH_INTERVAL_SECS);
 
+        // A daily schedule, if one is set. When it is, `flush_interval_secs`
+        // stops being how often to deliver and becomes how often to ask
+        // whether today's delivery is owed.
+        //
+        // A value that is not a time falls back to the interval, which
+        // delivers more often rather than less. A typo must not be the reason
+        // a night goes missing.
+        let flush_at = get("TARCIE_FLUSH_AT").and_then(|raw| {
+            let parsed = parse_time_of_day(&raw);
+            if parsed.is_none() {
+                crate::util::log::write(format_args!(
+                    "TARCIE_FLUSH_AT is not an HH:MM time, delivering on the interval instead"
+                ));
+            }
+            parsed
+        });
+
         let batch_max = get("TARCIE_BATCH_MAX")
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_BATCH_MAX);
@@ -69,6 +89,7 @@ impl SinkConfig {
             auth,
             allow_remote,
             flush_interval_secs: flush_interval_secs.max(MIN_FLUSH_INTERVAL_SECS),
+            flush_at,
             batch_max: batch_max.max(1),
             queue_max_events: queue_max_events.max(100),
         })
@@ -256,6 +277,32 @@ mod tests {
             cfg.flush_interval_secs, MIN_FLUSH_INTERVAL_SECS,
             "a zero interval would take the background flusher down"
         );
+    }
+
+    // --- The daily schedule ------------------------------------------------
+
+    #[test]
+    fn a_daily_schedule_is_read_when_one_is_set() {
+        let cfg = SinkConfig::resolve(vars(&[("TARCIE_FLUSH_AT", "02:00")]))
+            .expect("config resolves");
+        assert_eq!(cfg.flush_at, NaiveTime::from_hms_opt(2, 0, 0));
+    }
+
+    #[test]
+    fn no_schedule_leaves_delivery_on_the_interval() {
+        assert!(SinkConfig::resolve(unset).expect("config resolves").flush_at.is_none());
+    }
+
+    #[test]
+    fn a_schedule_that_is_not_a_time_falls_back_to_the_interval() {
+        // Falling back delivers more often rather than less. A typo must not
+        // be the reason a night goes missing.
+        for raw in ["2am", "24:00", "", "tonight"] {
+            let cfg = SinkConfig::resolve(vars(&[("TARCIE_FLUSH_AT", raw)]))
+                .expect("config resolves");
+            assert!(cfg.flush_at.is_none(), "{raw:?}");
+            assert_eq!(cfg.flush_interval_secs, DEFAULT_FLUSH_INTERVAL_SECS);
+        }
     }
 
     #[test]
