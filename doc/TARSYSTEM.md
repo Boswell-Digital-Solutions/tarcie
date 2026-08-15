@@ -318,14 +318,109 @@ Section 6 describes the loop, the per-request bound, and the retry strategy.
 
 # Product Surface
 
-**Document version:** 1.0 (bootstrap scaffold)
+Everything a person can do with tarcie, and everything tarcie says back.
 
-User-facing product surface: routes, flows, and entry points.
+The surface is one window with one text box, one button, and four gestures.
+There is nothing else: no menu, no tray icon, no settings screen, no history,
+and no notifications.
 
-> This chapter is a registry-generated bootstrap scaffold for a
-> `application` class documentation system. Replace this placeholder with
-> real authored content. Registry will not invent repo truth that is not
-> already present in the repo.
+## Entry
+
+The global hotkey `Ctrl+Alt+T` is the only way in. It toggles the overlay:
+visible becomes hidden, hidden becomes visible and focused.
+
+The window is created hidden (`"visible": false`), skips the taskbar, and has no
+tray icon, so nothing on screen offers a way to open it. A hotkey that the
+operating system refuses to grant therefore leaves tarcie unreachable. Section
+10 records that the binding is proven to parse and to name the combination the
+code registers, and that whether the system grants it is not covered.
+
+Repeated presses inside `HOTKEY_DEBOUNCE_MS` (500 ms) are ignored, so a key that
+repeats does not flicker the window.
+
+## The window
+
+From `src-tauri/tauri.conf.json`:
+
+| Property | Value | What it means on screen |
+|---|---|---|
+| `width` × `height` | 480 × 140 | Constraint 5: small enough not to take over |
+| `resizable` | `false` | One size; there is nothing to lay out |
+| `alwaysOnTop` | `true` | It sits over the work being observed |
+| `skipTaskbar` | `true` | It does not appear as a running window |
+| `visible` | `false` | It starts hidden and waits for the hotkey |
+| `center` | `true` | It arrives in the same place every time |
+| `decorations` | `true` | It keeps a title bar, and therefore a close button |
+| `title` | `Tarcie` | — |
+
+**The close button is not the Escape key.** Escape hides the overlay. Closing
+the window ends the application, after a final flush bounded by
+`SHUTDOWN_FLUSH_SECS`. Section 6 describes that flush.
+
+## What is on it
+
+Three elements, in `src/index.html`:
+
+| Element | Id | Appearance |
+|---|---|---|
+| Text box | `tarcie-input` | Placeholder `Type one friction note… (optional #tag)`, focused on arrival |
+| Marker button | `tarcie-marker` | A red circle, titled `Marker` |
+| Status | `tarcie-status` | Empty except during a confirmation |
+
+## The four gestures
+
+| Gesture | What it does |
+|---|---|
+| `Ctrl+Alt+T` | Shows the overlay, focused, or hides it |
+| `Enter` | Captures the text in the box as a note |
+| Marker button | Captures a marker, labelled with whatever is in the box |
+| `Escape` | Hides the overlay and captures nothing |
+
+Section 3 states what each capture becomes, including which inputs are refused
+and how a `#tag` is read.
+
+`Escape` leaves the text where it is. The overlay is hidden rather than
+destroyed, so an unsent draft is still in the box at the next hotkey press. It
+survives until the application exits.
+
+## What tarcie says back
+
+One word, once, and only when a capture is confirmed.
+
+The body takes a green outline, the status reads `Captured`, and both last
+`FLASH_MS` (200 ms). The overlay then hides, and the box is cleared if that
+capture took its text.
+
+That is the whole vocabulary. There is no progress indicator, no error dialog,
+no failure state, and no sink or queue status anywhere on screen.
+
+**Silence is the other half of it.** A refused capture, a capture that outlived
+its five-second budget, and a gesture turned away by a guard all look
+identical: nothing changes. The overlay stays open, holding the text. The window
+that did not go away is the whole signal, and the text still on screen is the
+only copy anybody can point to. Section 9 sets this out.
+
+## What is deliberately not here
+
+- **No readback.** Nothing displays, searches, edits, or exports what was
+  captured. Constraint 2 makes this a boundary rather than a gap: a "show me
+  what I captured" surface is a scope change.
+- **No settings screen.** Every setting is an environment variable, read once at
+  startup. Section 7 lists them.
+- **No status surface.** Whether delivery is working is reported to a log file,
+  never to the overlay. Section 9 describes the log.
+- **No account, no sync, no sharing.** Tarcie captures and forwards.
+
+## The webview
+
+The overlay renders no captured text as HTML. The box holds what the user
+typed, the status holds one fixed word, and nothing from the queue or the sink
+is ever displayed — which follows from there being no readback at all.
+
+`"csp": null` in the window's security block disables the webview content
+security policy. No injection path exists today, because no untrusted content
+reaches the page. A surface that displays anything captured, or anything a sink
+returns, would change that and needs the policy settled first.
 
 ---
 
@@ -525,22 +620,77 @@ qualifies on Linux first, so the sync is a no-op there rather than a failure.
 
 ## Retention
 
-The sent directory is never pruned. Nothing in tarcie deletes a file, so every
-event ever captured stays on the disk under `queue/sent/` after it has been
-delivered, for the life of the installation.
+The sent directory is bounded by two rules, applied together:
 
-Two consequences follow, and neither is yet an operator decision that has been
-taken:
+| Bound | Value | Drops |
+|---|---|---|
+| `SENT_RETENTION_DAYS` | 90 days | A batch stamped before the cutoff |
+| `SENT_MAX_BYTES` | 256 MiB | The oldest batches, until the total fits |
 
-- **Disk.** The archive grows without limit. Cap rotation bounds the size of
-  one file and nothing bounds the total.
-- **Retention.** A write-only capture tool keeps a complete plain-text copy of
-  everything the user has captured. Section 8 records that there is no
-  encryption at rest, which this compounds.
+Both are sized for an ordinary desktop. A typical note is about 310 bytes on
+the line, so a hundred captures a day costs roughly 11 MB a year and never
+approaches the ceiling. The ceiling is for content that runs to
+`MAX_CONTENT_BYTES`, where the same hundred a day would reach about 370 MB a
+year.
 
-Whether the archive is a safety net worth its cost, or should age out, is a
-decision for the operator. Tarcie does not take it, and this section exists so
-that the decision is made rather than inherited.
+The archive used to keep every event ever captured, for the life of the
+installation. That was unbounded disk, and a complete plain-text copy of
+everything the user had captured on a tool with no encryption at rest.
+
+### What the archive is for
+
+Nothing in tarcie reads it. The tool is write-only, so the archive cannot be
+searched, resent, or displayed, and recovering anything from it means a person
+opening files by hand.
+
+It is therefore forensic, not a safety net. The durability contract — a capture
+survives an unreachable sink — is kept by `queue.jsonl` and `sending/`, which
+both sit before delivery. The archive is entirely after it.
+
+### When the bounds are applied
+
+- **Whenever a batch is archived.** Archiving is the only thing that grows the
+  archive, so it is where the archive is bounded. A claim that placed nothing
+  skips the pass: it runs under the lock `append` waits on, and reading the
+  whole directory every flush cycle would put that in the capture path for no
+  reason.
+- **Once at startup.** A run that delivers nothing never grows the archive and
+  would never revisit it, so the retention period would go unkept on exactly
+  the installations holding the most forgotten captures.
+
+### What is never deleted
+
+A file whose name does not carry a stamp this can read. Nothing but the archive
+step writes to that directory, so a name of another shape arrived by hand, and
+deleting what it cannot date is not a capture tool's business.
+
+### The record
+
+Deleting a capture is the one thing tarcie does that a user cannot see and
+cannot undo, so it is never silent. One log line carries the count, the byte
+total, and the span of stamps removed. What the events said never appears,
+which is the rule the rest of the log already keeps.
+
+## Who can read it
+
+The queue directory, `sending/`, and the archive are created at `0700`, and the
+files inside them at `0600`. Nothing masks a capture — the queue holds the
+user's notes verbatim — so the file system is the only thing between them and
+another account on the same machine.
+
+Left to the umask these are `0755` and `0644`, which makes the answer depend on
+whether the distribution closed the home directory. That is not tarcie's
+decision to inherit.
+
+**The directory is the gate.** A closed directory keeps other accounts out of
+the files inside it whatever mode those files carry, which is what makes a queue
+an earlier version created at `0644` safe without rewriting it. An existing
+directory is closed as well as a new one, because creation does not touch a
+directory that is already there.
+
+**This is not encryption at rest and does not stand in for it.** Anything
+running as the same user reads the queue as easily as tarcie does. Section 11
+records the decision that stays open.
 
 ## Capacity
 
@@ -716,6 +866,7 @@ run from a terminal still shows them.
 - a background flush error
 - a queue line that did not parse, by line number
 - a queue that reached its cap
+- what bounding the archive dropped, by count, bytes, and span of stamps
 - a device ID file that could not be read
 
 **No capture content is ever written to the log.** The log records what happened
@@ -1031,6 +1182,8 @@ All defined in `constraints.rs`:
 | `HOTKEY_DEBOUNCE_MS` | 500 | Minimum interval between hotkey activations |
 | `SHUTDOWN_FLUSH_SECS` | 5 | How long a close waits for the final flush |
 | `SINK_REQUEST_TIMEOUT_SECS` | 30 | How long one POST to the sink may take |
+| `SENT_RETENTION_DAYS` | 90 | How long a delivered batch stays in the archive |
+| `SENT_MAX_BYTES` | 268,435,456 (256 MiB) | Ceiling on the whole archive |
 | `MAX_LOG_BYTES` | 1,048,576 (1 MiB) | Log size before rotation, per file |
 | `MAX_LOG_LINE_CHARS` | 2,048 | Max length of one log line |
 
@@ -1091,6 +1244,8 @@ The suite also covers these areas:
 | Nothing worth sending | `ipc/commands.rs` | A note that says nothing of its own never reaches the queue, whether it is empty, whitespace, a tag alone, or a string of tags, and a tagged observation still does |
 | Marker labels | `ipc/commands.rs` | A label that is only a tag names the moment, and a label with text beside it splits into the tag and the rest |
 | One capture per gesture | `src/overlay.ts` | An empty box sends nothing, a repeated Enter sends one capture, a refused note keeps its text on screen, and the next note is still taken |
+| Who can read a capture | `queue/jsonl.rs` | The queue file is created at 0600 in directories at 0700, a directory an earlier version left open is closed, and a deferred batch is written closed |
+| Bounding the archive | `queue/jsonl.rs` | A batch outside the retention period is dropped, an archive over its ceiling gives up its oldest first, a file it cannot date is never deleted, a run that archives nothing still keeps the period, and what was dropped is reported |
 | Durable placement | `queue/jsonl.rs` | A placement moves the file and neither directory sync errors, and a placement that cannot happen leaves the batch where it was |
 | The capture revert | `src/capture.ts` | A capture that outlives its budget reverts, a slow one inside the budget still counts, and a late reply is ignored |
 | Overlay honesty | `src/capture.ts` | Only a confirmed capture flashes and hides the overlay, and the box is cleared only by a confirmed capture that took it |
@@ -1138,6 +1293,10 @@ accept the first batch. It runs through `flusher_unbounded`, with no bound for
 the paused clock to jump to. The paused test beside it holds the opposite
 ground: with no bound in `SinkClient::new` there is no deadline at all, the
 flush never returns, and its guard reports that rather than hanging the suite.
+
+`prune_sent_to` takes the cutoff and the ceiling directly, so a test proves
+the rule without a ninety-day-old file or a quarter of a gigabyte to fill.
+`prune_sent` supplies the constants and the clock.
 
 `LogFile::with_ceiling` takes the size ceiling directly, so a test proves the
 rotation without writing a megabyte to do it. The tests build a `LogFile` in a
@@ -1280,7 +1439,7 @@ before it posts anything, so an event captured during a flush cannot be
 archived as sent. Section 5 describes the lifecycle and section 6 the loop.
 Read those two before changing anything in `flusher.rs` or `queue/jsonl.rs`.
 
-The repository has 96 Rust unit tests and 29 frontend unit tests, and a CI
+The repository has 106 Rust unit tests and 29 frontend unit tests, and a CI
 workflow that runs both on every pull request. Section 10 lists what they cover
 and what they do not.
 
@@ -1304,11 +1463,14 @@ and what they do not.
   size of one file, not the number of files, and a claim reads every one of
   them into memory. A sink that stays down therefore costs disk and memory.
   The contract prefers that to discarding a capture.
-- **The sent archive is never pruned.** Nothing in tarcie deletes a file, so
-  every delivered event stays on the disk under `queue/sent/` for the life of
-  the installation. That is unbounded disk, and a complete plain-text copy of
-  every capture, on a tool that has no encryption at rest. Section 5 records
-  the decision this leaves open.
+- **Captures are stored in plain text.** The queue and the archive hold notes
+  verbatim. Both are closed to other accounts by their directory modes, and the
+  archive is bounded at 90 days and 256 MiB, so it no longer grows for the life
+  of the installation. Neither is encrypted: anything running as the same user
+  reads them as easily as tarcie does, and encryption at rest stays an open
+  decision. The log holds no capture content by invariant and the device ID is
+  a random UUID, so the queue and the archive are the two surfaces that carry
+  anything worth encrypting.
 - **A crash between a partial delivery and its archive duplicates the
   remainder.** The undelivered events are written back before the originals are
   archived, so a crash between those two steps offers the remainder again. This

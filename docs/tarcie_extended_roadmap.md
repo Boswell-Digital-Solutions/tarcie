@@ -29,7 +29,7 @@ current implementation reality.
 
 **Delivered:**
 
-- 96 Rust unit tests across `queue/jsonl.rs`, `ipc/commands.rs`,
+- 106 Rust unit tests across `queue/jsonl.rs`, `ipc/commands.rs`,
   `sink/config.rs`, `sink/client.rs`, `flusher.rs`, `util/device.rs`,
   `util/log.rs`, and `main.rs`
 - 29 frontend unit tests across `src/capture.ts` and `src/overlay.ts`, under
@@ -60,10 +60,21 @@ not. The uncovered set is the honest starting point for more work here.
 environment documentation.
 
 This is the remaining phase. The runtime chapters (sections 4 to 6) and the
-error-handling chapter are now exact, because the durability, revert, and
-logging work rewrote them against the code. Section 7 gained a floors table.
-The command reference and the bootstrap appendices have not had the same
-treatment, and `50-operations.md` is still a registry-generated scaffold.
+error-handling chapter are exact, because the durability, revert, and logging
+work rewrote them against the code. Section 7 gained a floors table. The
+command reference was corrected against the signatures it documents, and the
+product surface chapter is now authored from the window configuration, the
+overlay markup, and the gestures the wiring binds.
+
+Three registry-generated scaffolds remain, and each still carries the notice
+that says so:
+
+- `doc/system/20_runtime/20-runtime.md`
+- `doc/system/30_dependencies/40-integrations.md`
+- `doc/system/50_operations/50-operations.md`
+
+The bootstrap appendices duplicate the overview and architecture chapters
+rather than scaffolding, so they need reconciling rather than authoring.
 
 ## Governed forward plan
 

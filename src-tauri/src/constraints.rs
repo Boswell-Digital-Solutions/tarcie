@@ -39,6 +39,22 @@ pub const SHUTDOWN_FLUSH_SECS: u64 = 5;
 // interval: 4 x 30s of waiting, plus 2s + 4s + 8s, is 134s against 300s.
 pub const SINK_REQUEST_TIMEOUT_SECS: u64 = 30;
 
+// How long a delivered batch stays in the archive, and how much of it is kept.
+//
+// The archive held every capture ever made, for the life of the installation.
+// Nothing in tarcie reads it, so its value is forensic and manual — worth
+// keeping, not worth keeping forever.
+//
+// Sized for an ordinary desktop. A typical note is about 310 bytes on the line,
+// so a hundred captures a day costs roughly 11 MB a year and never approaches
+// the ceiling. The ceiling is there for content that runs to MAX_CONTENT_BYTES,
+// where the same hundred a day would reach about 370 MB a year.
+//
+// The two work together. The period decides what is old enough to drop; the
+// ceiling bounds the worst case whatever the period says.
+pub const SENT_RETENTION_DAYS: i64 = 90;
+pub const SENT_MAX_BYTES: u64 = 256 * 1024 * 1024;
+
 // The log is bounded. One previous file is kept, so the pair costs at most
 // twice this. A log that grows until the disk is gone would take the queue
 // with it, and the queue is the reliability contract.

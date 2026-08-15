@@ -68,6 +68,7 @@ run from a terminal still shows them.
 - a background flush error
 - a queue line that did not parse, by line number
 - a queue that reached its cap
+- what bounding the archive dropped, by count, bytes, and span of stamps
 - a device ID file that could not be read
 
 **No capture content is ever written to the log.** The log records what happened

@@ -119,22 +119,77 @@ qualifies on Linux first, so the sync is a no-op there rather than a failure.
 
 ## Retention
 
-The sent directory is never pruned. Nothing in tarcie deletes a file, so every
-event ever captured stays on the disk under `queue/sent/` after it has been
-delivered, for the life of the installation.
+The sent directory is bounded by two rules, applied together:
 
-Two consequences follow, and neither is yet an operator decision that has been
-taken:
+| Bound | Value | Drops |
+|---|---|---|
+| `SENT_RETENTION_DAYS` | 90 days | A batch stamped before the cutoff |
+| `SENT_MAX_BYTES` | 256 MiB | The oldest batches, until the total fits |
 
-- **Disk.** The archive grows without limit. Cap rotation bounds the size of
-  one file and nothing bounds the total.
-- **Retention.** A write-only capture tool keeps a complete plain-text copy of
-  everything the user has captured. Section 8 records that there is no
-  encryption at rest, which this compounds.
+Both are sized for an ordinary desktop. A typical note is about 310 bytes on
+the line, so a hundred captures a day costs roughly 11 MB a year and never
+approaches the ceiling. The ceiling is for content that runs to
+`MAX_CONTENT_BYTES`, where the same hundred a day would reach about 370 MB a
+year.
 
-Whether the archive is a safety net worth its cost, or should age out, is a
-decision for the operator. Tarcie does not take it, and this section exists so
-that the decision is made rather than inherited.
+The archive used to keep every event ever captured, for the life of the
+installation. That was unbounded disk, and a complete plain-text copy of
+everything the user had captured on a tool with no encryption at rest.
+
+### What the archive is for
+
+Nothing in tarcie reads it. The tool is write-only, so the archive cannot be
+searched, resent, or displayed, and recovering anything from it means a person
+opening files by hand.
+
+It is therefore forensic, not a safety net. The durability contract — a capture
+survives an unreachable sink — is kept by `queue.jsonl` and `sending/`, which
+both sit before delivery. The archive is entirely after it.
+
+### When the bounds are applied
+
+- **Whenever a batch is archived.** Archiving is the only thing that grows the
+  archive, so it is where the archive is bounded. A claim that placed nothing
+  skips the pass: it runs under the lock `append` waits on, and reading the
+  whole directory every flush cycle would put that in the capture path for no
+  reason.
+- **Once at startup.** A run that delivers nothing never grows the archive and
+  would never revisit it, so the retention period would go unkept on exactly
+  the installations holding the most forgotten captures.
+
+### What is never deleted
+
+A file whose name does not carry a stamp this can read. Nothing but the archive
+step writes to that directory, so a name of another shape arrived by hand, and
+deleting what it cannot date is not a capture tool's business.
+
+### The record
+
+Deleting a capture is the one thing tarcie does that a user cannot see and
+cannot undo, so it is never silent. One log line carries the count, the byte
+total, and the span of stamps removed. What the events said never appears,
+which is the rule the rest of the log already keeps.
+
+## Who can read it
+
+The queue directory, `sending/`, and the archive are created at `0700`, and the
+files inside them at `0600`. Nothing masks a capture — the queue holds the
+user's notes verbatim — so the file system is the only thing between them and
+another account on the same machine.
+
+Left to the umask these are `0755` and `0644`, which makes the answer depend on
+whether the distribution closed the home directory. That is not tarcie's
+decision to inherit.
+
+**The directory is the gate.** A closed directory keeps other accounts out of
+the files inside it whatever mode those files carry, which is what makes a queue
+an earlier version created at `0644` safe without rewriting it. An existing
+directory is closed as well as a new one, because creation does not touch a
+directory that is already there.
+
+**This is not encryption at rest and does not stand in for it.** Anything
+running as the same user reads the queue as easily as tarcie does. Section 11
+records the decision that stays open.
 
 ## Capacity
 
