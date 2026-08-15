@@ -1,0 +1,29 @@
+{
+  "schema_version": "bds.tarcie.pdf-field-map.v1",
+  "field_map_version": "1.0",
+  "prototype_only": true,
+  "template": "Beta_Session_Report_v1_FILLABLE_PROTOTYPE.pdf",
+  "fields": [
+    {"name": "tester_name", "type": "text", "writable": true, "json_pointer": "/tester_display_name", "max_length": 120},
+    {"name": "product_name", "type": "text", "writable": false, "json_pointer": "/product_id"},
+    {"name": "build_id", "type": "text", "writable": false, "json_pointer": "/build_id"},
+    {"name": "platform", "type": "text", "writable": false, "json_pointer": "/platform"},
+    {"name": "session_id", "type": "text", "writable": false, "json_pointer": "/session_id"},
+    {"name": "started_at", "type": "text", "writable": false, "json_pointer": "/started_at"},
+    {"name": "ended_at", "type": "text", "writable": false, "json_pointer": "/ended_at"},
+    {"name": "section_1_status", "type": "text", "writable": true, "json_pointer": "/section_coverage/0/state", "max_length": 32},
+    {"name": "section_1_comment", "type": "multiline", "writable": true, "json_pointer": "/section_coverage/0/comment", "max_length": 2000},
+    {"name": "section_2_status", "type": "text", "writable": true, "json_pointer": "/section_coverage/1/state", "max_length": 32},
+    {"name": "section_2_comment", "type": "multiline", "writable": true, "json_pointer": "/section_coverage/1/comment", "max_length": 2000},
+    {"name": "section_3_status", "type": "text", "writable": true, "json_pointer": "/section_coverage/2/state", "max_length": 32},
+    {"name": "section_3_comment", "type": "multiline", "writable": true, "json_pointer": "/section_coverage/2/comment", "max_length": 2000},
+    {"name": "blocking_issue", "type": "checkbox", "writable": true, "json_pointer": "/findings/0/blocking_issue"},
+    {"name": "expected_result", "type": "multiline", "writable": true, "json_pointer": "/findings/0/expected", "max_length": 4000},
+    {"name": "observed_result", "type": "multiline", "writable": true, "json_pointer": "/findings/0/observed", "max_length": 4000},
+    {"name": "reproduction_steps", "type": "multiline", "writable": true, "json_pointer": "/findings/0/reproduction_steps", "max_length": 6000},
+    {"name": "unresolved_work", "type": "multiline", "writable": true, "json_pointer": "/unresolved_work", "max_length": 6000},
+    {"name": "overall_experience", "type": "multiline", "writable": true, "json_pointer": "/overall_experience", "max_length": 10000},
+    {"name": "privacy_review_complete", "type": "checkbox", "writable": true, "json_pointer": "/privacy_review_complete"},
+    {"name": "tester_attestation", "type": "multiline", "writable": true, "json_pointer": "/tester_attestation", "max_length": 1000}
+  ]
+}

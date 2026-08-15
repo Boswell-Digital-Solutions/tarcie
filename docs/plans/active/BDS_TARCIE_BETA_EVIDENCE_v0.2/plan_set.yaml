@@ -1,0 +1,80 @@
+schema_version: "bds.plan-set.v1"
+plan_id: "BDS-TARCIE-BETA-EVIDENCE-v0.2"
+title: "Tarcie Guided Beta Sessions, Preloaded Assignments, and Writable Closeout Reports"
+version: "0.2"
+prepared_at: "2026-08-15"
+lifecycle_status: "proposed_for_board_review_1"
+authority_status: "documentation_only_candidate"
+decision_owner: "Charlie Boswell"
+organization: "Boswell Digital Solutions"
+lineage:
+  predecessor: "BDS-TARCIE-BETA-EVIDENCE-v0.1"
+  predecessor_status: "controlling_until_v0.2_authorized"
+  supersession_effect: "none_until_explicit_board_decision"
+board_review_1:
+  status: "requested"
+  recommended_disposition: "authorize_gate00_and_phase1_only_with_fail_closed_conditions"
+board_review_2:
+  status: "not_started"
+products:
+  assistant:
+    repository: "Boswell-Digital-Solutions/tarcie"
+    branch: "main"
+    observed_commit: "7ad58c601312baaf9880bc3120a47e1b77bb34ed"
+  first_test_target:
+    repository: "Boswell-Digital-Solutions/Author-Forge"
+    branch: "main"
+    observed_commit: "5b7765113ead1465f4d8a3802abfc7e34e8a9b07"
+  control_plane:
+    repository: "Boswell-Digital-Solutions/Forge_Command"
+    branch: "main"
+    observed_commit: "87fd7f11ad088079949f15a17752c93c29782fdb"
+  candidate_store:
+    repository: "Boswell-Digital-Solutions/dataforge-Local"
+    branch: "master"
+    observed_commit: "6c07d13d31a6f6c07789cc23429d1b474ec0816a"
+governance_authority: "Forge:SMITH"
+platform_requirement:
+  required_operating_systems:
+    - "windows"
+    - "macos"
+    - "linux"
+  applies_to:
+    - "Tarcie"
+    - "Author_Forge"
+  support_claim_rule: "installed_core_workflow_receipt_required"
+core_flow:
+  - "load_session_package"
+  - "ready"
+  - "start_session"
+  - "active_or_paused"
+  - "end_and_review"
+  - "writable_pdf_closeout"
+  - "finalize_local_candidate_package"
+authority_model:
+  tarcie: "guided_human_assistant_and_local_capture"
+  forge_command: "assignment_lifecycle_intake_and_receipts"
+  dataforge_local: "accepted_fact_and_artifact_storage_without_semantic_authority"
+  beta_by_forge: "separate_autonomous_campaign_system"
+requested_scope:
+  - "GATE-00 current-source lock"
+  - "strict candidate schemas and canonicalization"
+  - "synthetic positive and negative fixtures"
+  - "threat model and accessible wireframes"
+  - "non-operative fillable PDF prototype"
+  - "cross-platform qualification plan"
+explicitly_not_authorized:
+  - "runtime implementation"
+  - "repository mutation or merge"
+  - "screenshot permission or real capture"
+  - "personal or production content ingestion"
+  - "live beta enrollment"
+  - "production DataForge write"
+  - "Forge_Command delivery"
+  - "network or cloud transport"
+  - "credentials or deployment"
+  - "automatic issue creation"
+  - "autonomous testing"
+  - "diagnosis repair promotion or release"
+next_gate: "Board Review 1 then GATE-00"
+

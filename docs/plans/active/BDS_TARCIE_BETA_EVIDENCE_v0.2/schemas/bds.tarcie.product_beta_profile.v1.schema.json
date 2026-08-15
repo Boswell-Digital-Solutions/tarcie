@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.boswelldigitalsolutions.com/tarcie/product-beta-profile.v1.schema.json",
+  "title": "ProductBetaProfile.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "profile_id", "product_id", "application_id", "display_name", "profile_version", "supported_platforms", "sections"],
+  "properties": {
+    "schema_version": {"const": "ProductBetaProfile.v1"},
+    "profile_id": {"type": "string", "format": "uuid"},
+    "product_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "application_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "display_name": {"type": "string", "minLength": 1, "maxLength": 160},
+    "profile_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+    "supported_platforms": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"enum": ["windows", "macos", "linux"]}
+    },
+    "sections": {
+      "type": "array", "minItems": 1, "maxItems": 100,
+      "items": {"$ref": "#/$defs/section"}
+    }
+  },
+  "$defs": {
+    "section": {
+      "type": "object", "additionalProperties": false,
+      "required": ["section_id", "name", "purpose", "evidence_prompts"],
+      "properties": {
+        "section_id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "purpose": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "evidence_prompts": {"type": "array", "maxItems": 20, "items": {"type": "string", "minLength": 1, "maxLength": 500}},
+        "guardrails": {"type": "array", "maxItems": 20, "items": {"type": "string", "minLength": 1, "maxLength": 500}}
+      }
+    }
+  }
+}
+

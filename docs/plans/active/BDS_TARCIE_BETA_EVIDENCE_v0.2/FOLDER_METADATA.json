@@ -1,0 +1,34 @@
+{
+  "schema_version": "bds.folder-metadata.v1",
+  "folder_name": "BDS_TARCIE_BETA_EVIDENCE_v0.2_PLAN_SET",
+  "folder_role": "Canonical Drive review-candidate plan packet for Tarcie guided beta sessions, preloaded product assignments, three-platform qualification, and writable PDF closeout.",
+  "canonical_plan_id": "BDS-TARCIE-BETA-EVIDENCE-v0.2",
+  "lifecycle_status": "proposed_for_board_review_1",
+  "contains": [
+    "human-readable plan modules",
+    "Board Review 1 packet and rendered PDF",
+    "strict candidate schemas",
+    "synthetic fixture",
+    "machine-readable plan and registry metadata",
+    "fillable PDF documentation prototype",
+    "evidence index and SHA-256 checksums"
+  ],
+  "use_for": [
+    "Board Review 1",
+    "GATE-00 source-lock planning",
+    "contract and fixture review",
+    "cross-platform qualification planning",
+    "future separately authorized implementation work-package derivation"
+  ],
+  "do_not_use_as": [
+    "implementation authorization",
+    "runtime configuration",
+    "production schema",
+    "live beta enrollment",
+    "production evidence store",
+    "platform support receipt",
+    "repair promotion or release authority"
+  ],
+  "supersession_rule": "This folder does not supersede v0.1 until an explicit Board decision authorizes v0.2 and updates the registry."
+}
+

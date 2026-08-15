@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.boswelldigitalsolutions.com/tarcie/beta-session-assignment.v1.schema.json",
+  "title": "BetaSessionAssignment.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "assignment_id", "session_id", "profile_id", "tester_id", "product_id", "application_id", "build_id", "platform_policy", "assigned_sections", "privacy_profile", "expires_at"],
+  "properties": {
+    "schema_version": {"const": "BetaSessionAssignment.v1"},
+    "assignment_id": {"type": "string", "format": "uuid"},
+    "session_id": {"type": "string", "format": "uuid"},
+    "profile_id": {"type": "string", "format": "uuid"},
+    "tester_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "product_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "application_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "build_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "repository": {"type": "string", "maxLength": 256},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "platform_policy": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"enum": ["windows", "macos", "linux"]}
+    },
+    "assigned_sections": {
+      "type": "array", "minItems": 1, "maxItems": 100,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["section_id", "required"],
+        "properties": {
+          "section_id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"},
+          "required": {"type": "boolean"}
+        }
+      }
+    },
+    "free_exploration_allowed": {"type": "boolean", "default": true},
+    "privacy_profile": {"type": "string", "minLength": 1, "maxLength": 128},
+    "expires_at": {"type": "string", "format": "date-time"}
+  },
+  "dependentRequired": {"repository": ["commit"], "commit": ["repository"]}
+}
+

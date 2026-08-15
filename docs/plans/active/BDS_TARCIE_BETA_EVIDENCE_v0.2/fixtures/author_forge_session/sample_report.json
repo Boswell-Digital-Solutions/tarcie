@@ -1,0 +1,64 @@
+{
+  "schema_version": "BetaSessionReport.v1",
+  "report_id": "55555555-5555-4555-8555-555555555555",
+  "report_revision": 1,
+  "report_state": "finalized",
+  "session_id": "33333333-3333-4333-8333-333333333333",
+  "assignment_id": "22222222-2222-4222-8222-222222222222",
+  "product_id": "author_forge",
+  "build_id": "5b7765113ead1465f4d8a3802abfc7e34e8a9b07",
+  "tester_id": "synthetic-tester-001",
+  "tester_display_name": "Synthetic Tester",
+  "platform": "linux",
+  "started_at": "2026-08-15T12:00:00Z",
+  "ended_at": "2026-08-15T12:45:00Z",
+  "section_coverage": [
+    {
+      "section_id": "launch_and_hearth",
+      "state": "reviewed",
+      "comment": "Synthetic launch path completed.",
+      "observation_ids": []
+    },
+    {
+      "section_id": "project_creation",
+      "state": "reviewed",
+      "comment": "Synthetic disposable project created and reopened.",
+      "observation_ids": []
+    },
+    {
+      "section_id": "smithy_editor",
+      "state": "partial",
+      "comment": "Editing was reviewed; recovery remains for a later run.",
+      "observation_ids": []
+    },
+    {
+      "section_id": "foundry_structure",
+      "state": "skipped",
+      "comment": "Skipped in this bounded synthetic fixture.",
+      "observation_ids": []
+    },
+    {
+      "section_id": "export_and_close",
+      "state": "reviewed",
+      "comment": "Synthetic export completed and the project reopened.",
+      "observation_ids": []
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "66666666-6666-4666-8666-666666666666",
+      "expected": "A recovery state should be visibly explained.",
+      "observed": "The synthetic fixture records a deliberately incomplete recovery review.",
+      "reproduction_steps": "Open the synthetic project, enter the Smithy editor, and stop before recovery qualification.",
+      "blocking_issue": false,
+      "evidence_references": []
+    }
+  ],
+  "overall_experience": "Synthetic report fixture used only to validate the candidate schema and PDF field map.",
+  "unresolved_work": "Qualify the same workflow on Windows, macOS, and Linux with installed receipts.",
+  "privacy_review_complete": true,
+  "tester_attestation": "I confirm this fixture contains synthetic content only.",
+  "pdf_field_map_version": "1.0",
+  "structured_report_sha256": "1ad0f44c87c6b5530b9128b4c856de40b21d038a531343a0b03c5d6f3b726fa6",
+  "generated_pdf_sha256": "3ba4a0163052246898eb7a75db958a49d9e741c60a30338cc58a40bc9f3ccbf4"
+}
