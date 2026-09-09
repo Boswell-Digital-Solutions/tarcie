@@ -19,6 +19,20 @@ Canonical reference: `doc/system/` → `doc/TARSYSTEM.md` (`bash doc/system/BUIL
 
 ---
 
+## Architecture
+
+Flow: hotkey-activated overlay (`src/main.ts`, `src/overlay.ts`, `src/capture.ts`)
+→ Tauri IPC commands (`src-tauri/src/ipc/commands.rs`) → mutex-protected, fsync'd
+JSONL queue (`src-tauri/src/queue/jsonl.rs`) → background flusher with retry/backoff
+(`src-tauri/src/flusher.rs`) → HTTP sink client (`src-tauri/src/sink/client.rs`,
+`sink/config.rs`), default `127.0.0.1:8080` localhost-only.
+
+Other key modules: `model.rs` (`TarcieEvent`/`EventType`), `constraints.rs` (v1
+hard limits), `state.rs` (`AppState`), `schedule.rs` (daily delivery schedule),
+`util/` (platform paths, device identity, operational log).
+
+---
+
 ## Verification
 
 ```bash
