@@ -25,25 +25,25 @@ inventory that may drift between audits.
 
 | Part | File | Contents |
 | --- | --- | --- |
-| §1 | `00_overview/01-overview.md` | 1. Overview |
-| §2 | `00_overview/02-architecture.md` | 2. Architecture |
-| §3 | `10_service-contract/03-command-reference.md` | 3. Command Reference |
-| §4 | `10_service-contract/10-product-surface.md` | Product Surface |
-| §5 | `20_runtime/04-data-model.md` | 4. Data Model |
-| §6 | `20_runtime/05-queue-system.md` | 5. Queue System |
-| §7 | `20_runtime/06-flush-pipeline.md` | 6. Flush Pipeline |
-| §8 | `20_runtime/09-error-handling.md` | 9. Error Handling |
-| §9 | `20_runtime/20-runtime.md` | Runtime |
-| §10 | `30_dependencies/40-integrations.md` | Integrations |
-| §11 | `50_operations/07-configuration.md` | 7. Configuration |
-| §12 | `50_operations/08-constraints.md` | 8. Constraints |
-| §13 | `50_operations/10-testing.md` | 10. Testing |
-| §14 | `50_operations/11-handover.md` | 11. Handover |
-| §15 | `50_operations/50-operations.md` | Operations |
-| §16 | `99_appendices/30-data.md` | 4. Data Model |
-| §17 | `99_appendices/90-appendices.md` | Appendices |
-| §18 | `99_appendices/91-bootstrap-overview.md` | 1. Overview |
-| §19 | `99_appendices/92-bootstrap-architecture.md` | 2. Architecture |
+| §1 | `01-overview.md` | 1. Overview |
+| §2 | `02-architecture.md` | 2. Architecture |
+| §3 | `03-command-reference.md` | 3. Command Reference |
+| §4 | `10-product-surface.md` | Product Surface |
+| §5 | `04-data-model.md` | 4. Data Model |
+| §6 | `05-queue-system.md` | 5. Queue System |
+| §7 | `06-flush-pipeline.md` | 6. Flush Pipeline |
+| §8 | `09-error-handling.md` | 9. Error Handling |
+| §9 | `20-runtime.md` | Runtime |
+| §10 | `40-integrations.md` | Integrations |
+| §11 | `07-configuration.md` | 7. Configuration |
+| §12 | `08-constraints.md` | 8. Constraints |
+| §13 | `10-testing.md` | 10. Testing |
+| §14 | `11-handover.md` | 11. Handover |
+| §15 | `50-operations.md` | Operations |
+| §16 | `30-data.md` | 4. Data Model |
+| §17 | `90-appendices.md` | Appendices |
+| §18 | `91-bootstrap-overview.md` | 1. Overview |
+| §19 | `92-bootstrap-architecture.md` | 2. Architecture |
 
 ## Quick Assembly
 
@@ -313,114 +313,6 @@ pub async fn flush_now(
 
 The deferral reason carries the whole cause chain, not just the attempt.
 Section 6 describes the loop, the per-request bound, and the retry strategy.
-
----
-
-# Product Surface
-
-Everything a person can do with tarcie, and everything tarcie says back.
-
-The surface is one window with one text box, one button, and four gestures.
-There is nothing else: no menu, no tray icon, no settings screen, no history,
-and no notifications.
-
-## Entry
-
-The global hotkey `Ctrl+Alt+T` is the only way in. It toggles the overlay:
-visible becomes hidden, hidden becomes visible and focused.
-
-The window is created hidden (`"visible": false`), skips the taskbar, and has no
-tray icon, so nothing on screen offers a way to open it. A hotkey that the
-operating system refuses to grant therefore leaves tarcie unreachable. Section
-10 records that the binding is proven to parse and to name the combination the
-code registers, and that whether the system grants it is not covered.
-
-Repeated presses inside `HOTKEY_DEBOUNCE_MS` (500 ms) are ignored, so a key that
-repeats does not flicker the window.
-
-## The window
-
-From `src-tauri/tauri.conf.json`:
-
-| Property | Value | What it means on screen |
-|---|---|---|
-| `width` × `height` | 480 × 140 | Constraint 5: small enough not to take over |
-| `resizable` | `false` | One size; there is nothing to lay out |
-| `alwaysOnTop` | `true` | It sits over the work being observed |
-| `skipTaskbar` | `true` | It does not appear as a running window |
-| `visible` | `false` | It starts hidden and waits for the hotkey |
-| `center` | `true` | It arrives in the same place every time |
-| `decorations` | `true` | It keeps a title bar, and therefore a close button |
-| `title` | `Tarcie` | — |
-
-**The close button is not the Escape key.** Escape hides the overlay. Closing
-the window ends the application, after a final flush bounded by
-`SHUTDOWN_FLUSH_SECS`. Section 6 describes that flush.
-
-## What is on it
-
-Three elements, in `src/index.html`:
-
-| Element | Id | Appearance |
-|---|---|---|
-| Text box | `tarcie-input` | Placeholder `Type one friction note… (optional #tag)`, focused on arrival |
-| Marker button | `tarcie-marker` | A red circle, titled `Marker` |
-| Status | `tarcie-status` | Empty except during a confirmation |
-
-## The four gestures
-
-| Gesture | What it does |
-|---|---|
-| `Ctrl+Alt+T` | Shows the overlay, focused, or hides it |
-| `Enter` | Captures the text in the box as a note |
-| Marker button | Captures a marker, labelled with whatever is in the box |
-| `Escape` | Hides the overlay and captures nothing |
-
-Section 3 states what each capture becomes, including which inputs are refused
-and how a `#tag` is read.
-
-`Escape` leaves the text where it is. The overlay is hidden rather than
-destroyed, so an unsent draft is still in the box at the next hotkey press. It
-survives until the application exits.
-
-## What tarcie says back
-
-One word, once, and only when a capture is confirmed.
-
-The body takes a green outline, the status reads `Captured`, and both last
-`FLASH_MS` (200 ms). The overlay then hides, and the box is cleared if that
-capture took its text.
-
-That is the whole vocabulary. There is no progress indicator, no error dialog,
-no failure state, and no sink or queue status anywhere on screen.
-
-**Silence is the other half of it.** A refused capture, a capture that outlived
-its five-second budget, and a gesture turned away by a guard all look
-identical: nothing changes. The overlay stays open, holding the text. The window
-that did not go away is the whole signal, and the text still on screen is the
-only copy anybody can point to. Section 9 sets this out.
-
-## What is deliberately not here
-
-- **No readback.** Nothing displays, searches, edits, or exports what was
-  captured. Constraint 2 makes this a boundary rather than a gap: a "show me
-  what I captured" surface is a scope change.
-- **No settings screen.** Every setting is an environment variable, read once at
-  startup. Section 7 lists them.
-- **No status surface.** Whether delivery is working is reported to a log file,
-  never to the overlay. Section 9 describes the log.
-- **No account, no sync, no sharing.** Tarcie captures and forwards.
-
-## The webview
-
-The overlay renders no captured text as HTML. The box holds what the user
-typed, the status holds one fixed word, and nothing from the queue or the sink
-is ever displayed — which follows from there being no readback at all.
-
-`"csp": null` in the window's security block disables the webview content
-security policy. No injection path exists today, because no untrusted content
-reaches the page. A surface that displays anything captured, or anything a sink
-returns, would change that and needs the policy settled first.
 
 ---
 
@@ -886,6 +778,139 @@ On window close, Tarcie attempts a final flush with a **5-second timeout**. If t
 
 ---
 
+# 7. Configuration
+
+All configuration is via environment variables. There is no config file. Defaults are safe for local development.
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TARCIE_SINK_URL` | `http://127.0.0.1:8080/ingest/tarcie` | HTTP endpoint for event ingestion |
+| `TARCIE_ALLOW_REMOTE_SINK` | `false` | If `false`, sink URL must be localhost/127.0.0.1. Safety constraint |
+| `TARCIE_SINK_AUTH` | *(none)* | Optional value for the `Authorization` header on sink requests |
+| `TARCIE_FLUSH_INTERVAL_SECS` | `300` | Seconds between background flush cycles |
+| `TARCIE_FLUSH_AT` | *(none)* | Local `HH:MM` for a daily delivery. When set, the interval becomes how often the schedule is checked |
+| `TARCIE_BATCH_MAX` | `200` | Maximum events per HTTP POST batch |
+| `TARCIE_QUEUE_MAX_EVENTS` | `10000` | Queue cap -- triggers rotation when reached |
+
+## Floors
+
+Three of the numeric settings are floored at the smallest value that still
+works, because a value below the floor disables the thing it configures:
+
+| Variable | Floor | Below it |
+|----------|-------|----------|
+| `TARCIE_FLUSH_INTERVAL_SECS` | `1` | `tokio::time::interval` panics on a zero period, in the spawned flush task where nothing reports it |
+| `TARCIE_BATCH_MAX` | `1` | A zero batch never drains the queue |
+| `TARCIE_QUEUE_MAX_EVENTS` | `100` | A cap this low rotates on almost every append |
+
+An unparsable value is not an error. It falls back to the default, so a typo
+costs the override and not the launch.
+
+## Two Delivery Modes
+
+Leaving `TARCIE_FLUSH_AT` unset keeps the original behaviour: every tick of
+`TARCIE_FLUSH_INTERVAL_SECS` delivers.
+
+Setting it to a local `HH:MM` makes delivery daily. The interval then stops
+meaning "how often to deliver" and becomes "how often to ask whether today's
+delivery is owed", so a target of `02:00` with the default 300-second interval
+delivers within five minutes of two in the morning.
+
+A value that is not a time is not an error. It falls back to the interval and
+says so in the log, because falling back delivers more often rather than less,
+and a typo must not be the reason a night goes missing.
+
+Section 6 describes what a scheduled delivery does when it runs, and why a
+missed night is recoverable.
+
+## Localhost-Only Default
+
+By default, `TARCIE_ALLOW_REMOTE_SINK` is `false`. This means the sink URL must resolve to `127.0.0.1` or `localhost`. Any attempt to configure a remote sink URL without explicitly setting `TARCIE_ALLOW_REMOTE_SINK=true` will be rejected at startup.
+
+This is a safety constraint: Tarcie captures raw, unfiltered user text. Sending it to a remote endpoint without explicit opt-in would be a data leak.
+
+## Configuration Source
+
+All config is read in `sink/config.rs` and assembled into a `SinkConfig` struct at application startup. The config is immutable for the lifetime of the process.
+
+---
+
+# 8. Constraints
+
+Rules 2 to 5 are hardcoded in `constraints.rs`. Rule 1 is a promise about what
+the user experiences, so the overlay keeps it: `CAPTURE_TIMEOUT_MS` lives in
+`src/capture.ts`. All five are non-negotiable.
+
+## The Five Rules
+
+### 1. Capture Latency: 5-Second Revert
+
+If any capture operation (note or marker) takes longer than 5 seconds, the operation must revert. The user must never be blocked waiting for a capture to complete. This protects the "friction-free" guarantee -- if the queue is broken, the user should not notice.
+
+`runCapture` in `src/capture.ts` races the command against
+`CAPTURE_TIMEOUT_MS`. When the budget runs out the overlay stops waiting and
+the outcome is `unconfirmed` — not a failure, because the queue may hold the
+event after all. The overlay then says nothing and keeps the text, per section
+9.
+
+A late reply is ignored. Without the revert, a command that answered a minute
+later still confirmed, hid the window, and cleared the box — over whatever the
+user had typed since.
+
+### 2. Write-Only (No Readback)
+
+The UI is strictly write-only in v1. There is no command, endpoint, or surface to read back captured events. Data flows in one direction: user to queue to sink. SMITH handles all downstream consumption.
+
+### 3. No Categorization
+
+Tarcie does not categorize, tag, or group events beyond extracting a literal `#tag` string from note content. All semantic grouping, trend analysis, and categorization is the responsibility of SMITH.
+
+### 4. No AI / No LLMs
+
+Tarcie processes raw strings only. There is no AI, no LLM, no inference, no embeddings, no summarization. Content is captured verbatim and flushed verbatim.
+
+### 5. Small, Non-Blocking UI
+
+The overlay window is 480x140px. It must never block other applications. It appears on hotkey, accepts input, and disappears. No modal dialogs, no confirmation prompts, no settings screens.
+
+## Constants
+
+All defined in `constraints.rs`:
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `SOURCE_VERSION` | `"tarcie-v1.0.0"` | Stamped on every event |
+| `DEFAULT_CONTEXT` | `"General"` | `app_context` when a note carries no `#tag` |
+| `MAX_CONTEXT_CHARS` | 64 | Max length of `app_context` field |
+| `MAX_TAG_CHARS` | 32 | Max length of extracted `#tag` |
+| `MAX_CONTENT_BYTES` | 10,240 (10 KB) | Max size of `content` field |
+| `DEFAULT_FLUSH_INTERVAL_SECS` | 300 | Background flush timer |
+| `MIN_FLUSH_INTERVAL_SECS` | 1 | Floor under the flush interval |
+| `DEFAULT_BATCH_MAX` | 200 | Events per HTTP POST |
+| `DEFAULT_QUEUE_MAX_EVENTS` | 10,000 | Queue cap before rotation |
+| `CLAIM_MAX_EVENTS` | 5,000 | How many events one claim takes into memory |
+| `MAX_SCHEDULED_ROUNDS` | 64 | Bounded rounds one scheduled delivery runs |
+| `HOTKEY` | `"Ctrl+Alt+T"` | The capture hotkey, parsed into the registered binding |
+| `HOTKEY_DEBOUNCE_MS` | 500 | Minimum interval between hotkey activations |
+| `SHUTDOWN_FLUSH_SECS` | 5 | How long a close waits for the final flush |
+| `SINK_REQUEST_TIMEOUT_SECS` | 30 | How long one POST to the sink may take |
+| `SENT_RETENTION_DAYS` | 90 | How long a delivered batch stays in the archive |
+| `SENT_MAX_BYTES` | 268,435,456 (256 MiB) | Ceiling on the whole archive |
+| `MAX_LOG_BYTES` | 1,048,576 (1 MiB) | Log size before rotation, per file |
+| `MAX_LOG_LINE_CHARS` | 2,048 | Max length of one log line |
+
+None of these is configurable. The environment variables in section 7 are the
+whole configuration surface.
+
+`SINK_REQUEST_TIMEOUT_SECS` and `SHUTDOWN_FLUSH_SECS` are both deadlines, and
+they answer different questions. The first bounds one request, so a sink that
+stops answering cannot end delivery for the session. The second bounds the
+final flush, so a slow sink cannot hold the window open on the way out.
+
+---
+
 # 9. Error Handling
 
 Tarcie uses a simple, pragmatic error handling strategy appropriate for a small capture tool.
@@ -1039,271 +1064,111 @@ A marker over an empty box takes nothing and clears nothing.
 
 ---
 
-# Runtime
+# Product Surface
 
-**Document version:** 1.0 (bootstrap scaffold)
+Everything a person can do with tarcie, and everything tarcie says back.
 
-Runtime topology, process boundaries, and managed state.
+The surface is one window with one text box, one button, and four gestures.
+There is nothing else: no menu, no tray icon, no settings screen, no history,
+and no notifications.
 
-> This chapter is a registry-generated bootstrap scaffold for a
-> `application` class documentation system. Replace this placeholder with
-> real authored content. Registry will not invent repo truth that is not
-> already present in the repo.
+## Entry
 
----
+The global hotkey `Ctrl+Alt+T` is the only way in. It toggles the overlay:
+visible becomes hidden, hidden becomes visible and focused.
 
-# 4. Data Model
+The window is created hidden (`"visible": false`), skips the taskbar, and has no
+tray icon, so nothing on screen offers a way to open it. A hotkey that the
+operating system refuses to grant therefore leaves tarcie unreachable. Section
+10 records that the binding is proven to parse and to name the combination the
+code registers, and that whether the system grants it is not covered.
 
-## TarcieEvent
+Repeated presses inside `HOTKEY_DEBOUNCE_MS` (500 ms) are ignored, so a key that
+repeats does not flicker the window.
 
-The core data structure for all captured events.
+## The window
 
-```rust
-pub struct TarcieEvent {
-    pub id: Uuid,
-    pub device_id: Uuid,
-    pub timestamp_utc: DateTime<Utc>,
-    pub timestamp_mono_ms: u64,
-    pub event_type: EventType,
-    pub content: String,
-    pub app_context: String,
-    pub source_version: String,
-}
-```
+From `src-tauri/tauri.conf.json`:
 
-### Field Descriptions
+| Property | Value | What it means on screen |
+|---|---|---|
+| `width` × `height` | 480 × 140 | Constraint 5: small enough not to take over |
+| `resizable` | `false` | One size; there is nothing to lay out |
+| `alwaysOnTop` | `true` | It sits over the work being observed |
+| `skipTaskbar` | `true` | It does not appear as a running window |
+| `visible` | `false` | It starts hidden and waits for the hotkey |
+| `center` | `true` | It arrives in the same place every time |
+| `decorations` | `true` | It keeps a title bar, and therefore a close button |
+| `title` | `Tarcie` | — |
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `Uuid` | Unique event identifier, generated per capture |
-| `device_id` | `Uuid` | Persistent device identifier, created on first launch and stored to disk |
-| `timestamp_utc` | `DateTime<Utc>` | Wall-clock time for cross-session ordering |
-| `timestamp_mono_ms` | `u64` | Monotonic clock offset in milliseconds from session start. Resets on restart. Used for relative timing within a session |
-| `event_type` | `EventType` | Discriminator: `Note` or `Marker` |
-| `content` | `String` | Captured text content. Max 10 KB. Empty string for bare markers |
-| `app_context` | `String` | Extracted `#tag` from note content, or empty. Max 64 chars |
-| `source_version` | `String` | Always `"tarcie-v1.0.0"` in v1 |
+**The close button is not the Escape key.** Escape hides the overlay. Closing
+the window ends the application, after a final flush bounded by
+`SHUTDOWN_FLUSH_SECS`. Section 6 describes that flush.
 
-## EventType
+## What is on it
 
-```rust
-pub enum EventType {
-    Note,
-    Marker { reason: Option<String> },
-}
-```
+Three elements, in `src/index.html`:
 
-| Variant | Description |
-|---------|-------------|
-| `Note` | A text note. Content holds the user's text. First `#tag` extracted to `app_context` |
-| `Marker { reason }` | A timestamp marker. Optional `reason` string describes what is being marked |
+| Element | Id | Appearance |
+|---|---|---|
+| Text box | `tarcie-input` | Placeholder `Type one friction note… (optional #tag)`, focused on arrival |
+| Marker button | `tarcie-marker` | A red circle, titled `Marker` |
+| Status | `tarcie-status` | Empty except during a confirmation |
 
-## Serialization Format
+## The four gestures
 
-Events are serialized as JSON, one per line (JSONL). Example:
+| Gesture | What it does |
+|---|---|
+| `Ctrl+Alt+T` | Shows the overlay, focused, or hides it |
+| `Enter` | Captures the text in the box as a note |
+| Marker button | Captures a marker, labelled with whatever is in the box |
+| `Escape` | Hides the overlay and captures nothing |
 
-```json
-{"id":"a1b2c3d4-...","device_id":"e5f6a7b8-...","timestamp_utc":"2026-02-25T14:30:00Z","timestamp_mono_ms":42000,"event_type":"Note","content":"Remember to check the flush interval #config","app_context":"config","source_version":"tarcie-v1.0.0"}
-```
+Section 3 states what each capture becomes, including which inputs are refused
+and how a `#tag` is read.
 
-Marker example:
+`Escape` leaves the text where it is. The overlay is hidden rather than
+destroyed, so an unsent draft is still in the box at the next hotkey press. It
+survives until the application exits.
 
-```json
-{"id":"f9e8d7c6-...","device_id":"e5f6a7b8-...","timestamp_utc":"2026-02-25T14:31:00Z","timestamp_mono_ms":102000,"event_type":{"Marker":{"reason":"deploy started"}},"content":"","app_context":"","source_version":"tarcie-v1.0.0"}
-```
+## What tarcie says back
 
-## Sink Payload
+One word, once, and only when a capture is confirmed.
 
-When flushed, events are batched into a JSON payload:
+The body takes a green outline, the status reads `Captured`, and both last
+`FLASH_MS` (200 ms). The overlay then hides, and the box is cleared if that
+capture took its text.
 
-```json
-{
-  "source": "tarcie",
-  "events": [ ... ]
-}
-```
+That is the whole vocabulary. There is no progress indicator, no error dialog,
+no failure state, and no sink or queue status anywhere on screen.
 
-Each batch contains up to `DEFAULT_BATCH_MAX` (200) events.
+**Silence is the other half of it.** A refused capture, a capture that outlived
+its five-second budget, and a gesture turned away by a guard all look
+identical: nothing changes. The overlay stays open, holding the text. The window
+that did not go away is the whole signal, and the text still on screen is the
+only copy anybody can point to. Section 9 sets this out.
 
----
+## What is deliberately not here
 
----
+- **No readback.** Nothing displays, searches, edits, or exports what was
+  captured. Constraint 2 makes this a boundary rather than a gap: a "show me
+  what I captured" surface is a scope change.
+- **No settings screen.** Every setting is an environment variable, read once at
+  startup. Section 7 lists them.
+- **No status surface.** Whether delivery is working is reported to a log file,
+  never to the overlay. Section 9 describes the log.
+- **No account, no sync, no sharing.** Tarcie captures and forwards.
 
-# Integrations
+## The webview
 
-**Document version:** 1.0 (bootstrap scaffold)
+The overlay renders no captured text as HTML. The box holds what the user
+typed, the status holds one fixed word, and nothing from the queue or the sink
+is ever displayed — which follows from there being no readback at all.
 
-External integrations, upstream services, and wire contracts.
-
-> This chapter is a registry-generated bootstrap scaffold for a
-> `application` class documentation system. Replace this placeholder with
-> real authored content. Registry will not invent repo truth that is not
-> already present in the repo.
-
----
-
-# Governance
-
-**Truth class:** canonical doctrine
-
-This documentation system governs Tarcie's repo-local implementation truth. It
-does not define ecosystem-level doctrine, DataForge truth ownership, or SMITH
-downstream analysis behavior beyond the contract surfaces Tarcie consumes or
-hands off to.
-
-## Authority Boundary
-
-- `doc/system/` is the canonical authored source tree for Tarcie system truth.
-- `doc/TARSYSTEM.md` is generated output and must not be edited by hand.
-- Supporting docs, plans, and archives outside `doc/system/` are subordinate to
-  the compiled system reference when they describe current behavior.
-- Runtime behavior and verification evidence override stale prose; when they
-  disagree, update the source chapter and rebuild the compiled artifact.
-
-## Change Control
-
-Changes that alter capture behavior, queue durability, flush semantics,
-configuration, sink contracts, or safety constraints must update the relevant
-`doc/system/` chapter in the same change as the implementation.
-
-Documentation-only changes must still rebuild `doc/TARSYSTEM.md` with:
-
-```bash
-bash doc/system/BUILD.sh
-```
-
----
-
-# 7. Configuration
-
-All configuration is via environment variables. There is no config file. Defaults are safe for local development.
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `TARCIE_SINK_URL` | `http://127.0.0.1:8080/ingest/tarcie` | HTTP endpoint for event ingestion |
-| `TARCIE_ALLOW_REMOTE_SINK` | `false` | If `false`, sink URL must be localhost/127.0.0.1. Safety constraint |
-| `TARCIE_SINK_AUTH` | *(none)* | Optional value for the `Authorization` header on sink requests |
-| `TARCIE_FLUSH_INTERVAL_SECS` | `300` | Seconds between background flush cycles |
-| `TARCIE_FLUSH_AT` | *(none)* | Local `HH:MM` for a daily delivery. When set, the interval becomes how often the schedule is checked |
-| `TARCIE_BATCH_MAX` | `200` | Maximum events per HTTP POST batch |
-| `TARCIE_QUEUE_MAX_EVENTS` | `10000` | Queue cap -- triggers rotation when reached |
-
-## Floors
-
-Three of the numeric settings are floored at the smallest value that still
-works, because a value below the floor disables the thing it configures:
-
-| Variable | Floor | Below it |
-|----------|-------|----------|
-| `TARCIE_FLUSH_INTERVAL_SECS` | `1` | `tokio::time::interval` panics on a zero period, in the spawned flush task where nothing reports it |
-| `TARCIE_BATCH_MAX` | `1` | A zero batch never drains the queue |
-| `TARCIE_QUEUE_MAX_EVENTS` | `100` | A cap this low rotates on almost every append |
-
-An unparsable value is not an error. It falls back to the default, so a typo
-costs the override and not the launch.
-
-## Two Delivery Modes
-
-Leaving `TARCIE_FLUSH_AT` unset keeps the original behaviour: every tick of
-`TARCIE_FLUSH_INTERVAL_SECS` delivers.
-
-Setting it to a local `HH:MM` makes delivery daily. The interval then stops
-meaning "how often to deliver" and becomes "how often to ask whether today's
-delivery is owed", so a target of `02:00` with the default 300-second interval
-delivers within five minutes of two in the morning.
-
-A value that is not a time is not an error. It falls back to the interval and
-says so in the log, because falling back delivers more often rather than less,
-and a typo must not be the reason a night goes missing.
-
-Section 6 describes what a scheduled delivery does when it runs, and why a
-missed night is recoverable.
-
-## Localhost-Only Default
-
-By default, `TARCIE_ALLOW_REMOTE_SINK` is `false`. This means the sink URL must resolve to `127.0.0.1` or `localhost`. Any attempt to configure a remote sink URL without explicitly setting `TARCIE_ALLOW_REMOTE_SINK=true` will be rejected at startup.
-
-This is a safety constraint: Tarcie captures raw, unfiltered user text. Sending it to a remote endpoint without explicit opt-in would be a data leak.
-
-## Configuration Source
-
-All config is read in `sink/config.rs` and assembled into a `SinkConfig` struct at application startup. The config is immutable for the lifetime of the process.
-
----
-
-# 8. Constraints
-
-Rules 2 to 5 are hardcoded in `constraints.rs`. Rule 1 is a promise about what
-the user experiences, so the overlay keeps it: `CAPTURE_TIMEOUT_MS` lives in
-`src/capture.ts`. All five are non-negotiable.
-
-## The Five Rules
-
-### 1. Capture Latency: 5-Second Revert
-
-If any capture operation (note or marker) takes longer than 5 seconds, the operation must revert. The user must never be blocked waiting for a capture to complete. This protects the "friction-free" guarantee -- if the queue is broken, the user should not notice.
-
-`runCapture` in `src/capture.ts` races the command against
-`CAPTURE_TIMEOUT_MS`. When the budget runs out the overlay stops waiting and
-the outcome is `unconfirmed` — not a failure, because the queue may hold the
-event after all. The overlay then says nothing and keeps the text, per section
-9.
-
-A late reply is ignored. Without the revert, a command that answered a minute
-later still confirmed, hid the window, and cleared the box — over whatever the
-user had typed since.
-
-### 2. Write-Only (No Readback)
-
-The UI is strictly write-only in v1. There is no command, endpoint, or surface to read back captured events. Data flows in one direction: user to queue to sink. SMITH handles all downstream consumption.
-
-### 3. No Categorization
-
-Tarcie does not categorize, tag, or group events beyond extracting a literal `#tag` string from note content. All semantic grouping, trend analysis, and categorization is the responsibility of SMITH.
-
-### 4. No AI / No LLMs
-
-Tarcie processes raw strings only. There is no AI, no LLM, no inference, no embeddings, no summarization. Content is captured verbatim and flushed verbatim.
-
-### 5. Small, Non-Blocking UI
-
-The overlay window is 480x140px. It must never block other applications. It appears on hotkey, accepts input, and disappears. No modal dialogs, no confirmation prompts, no settings screens.
-
-## Constants
-
-All defined in `constraints.rs`:
-
-| Constant | Value | Purpose |
-|----------|-------|---------|
-| `SOURCE_VERSION` | `"tarcie-v1.0.0"` | Stamped on every event |
-| `DEFAULT_CONTEXT` | `"General"` | `app_context` when a note carries no `#tag` |
-| `MAX_CONTEXT_CHARS` | 64 | Max length of `app_context` field |
-| `MAX_TAG_CHARS` | 32 | Max length of extracted `#tag` |
-| `MAX_CONTENT_BYTES` | 10,240 (10 KB) | Max size of `content` field |
-| `DEFAULT_FLUSH_INTERVAL_SECS` | 300 | Background flush timer |
-| `MIN_FLUSH_INTERVAL_SECS` | 1 | Floor under the flush interval |
-| `DEFAULT_BATCH_MAX` | 200 | Events per HTTP POST |
-| `DEFAULT_QUEUE_MAX_EVENTS` | 10,000 | Queue cap before rotation |
-| `CLAIM_MAX_EVENTS` | 5,000 | How many events one claim takes into memory |
-| `MAX_SCHEDULED_ROUNDS` | 64 | Bounded rounds one scheduled delivery runs |
-| `HOTKEY` | `"Ctrl+Alt+T"` | The capture hotkey, parsed into the registered binding |
-| `HOTKEY_DEBOUNCE_MS` | 500 | Minimum interval between hotkey activations |
-| `SHUTDOWN_FLUSH_SECS` | 5 | How long a close waits for the final flush |
-| `SINK_REQUEST_TIMEOUT_SECS` | 30 | How long one POST to the sink may take |
-| `SENT_RETENTION_DAYS` | 90 | How long a delivered batch stays in the archive |
-| `SENT_MAX_BYTES` | 268,435,456 (256 MiB) | Ceiling on the whole archive |
-| `MAX_LOG_BYTES` | 1,048,576 (1 MiB) | Log size before rotation, per file |
-| `MAX_LOG_LINE_CHARS` | 2,048 | Max length of one log line |
-
-None of these is configurable. The environment variables in section 7 are the
-whole configuration surface.
-
-`SINK_REQUEST_TIMEOUT_SECS` and `SHUTDOWN_FLUSH_SECS` are both deadlines, and
-they answer different questions. The first bounds one request, so a sink that
-stops answering cannot end delivery for the session. The second bounds the
-final flush, so a slow sink cannot hold the window open on the way out.
+`"csp": null` in the window's security block disables the webview content
+security policy. No injection path exists today, because no untrusted content
+reaches the page. A surface that displays anything captured, or anything a sink
+returns, would change that and needs the policy settled first.
 
 ---
 
@@ -1643,6 +1508,141 @@ export TARCIE_BATCH_MAX=50
 | Queue files | Platform queue dir via `directories` crate |
 | Device ID | Platform data dir via `directories` crate |
 | Log | `<data dir>/logs/tarcie.log`, with one previous file beside it |
+
+---
+
+# Runtime
+
+**Document version:** 1.0 (bootstrap scaffold)
+
+Runtime topology, process boundaries, and managed state.
+
+> This chapter is a registry-generated bootstrap scaffold for a
+> `application` class documentation system. Replace this placeholder with
+> real authored content. Registry will not invent repo truth that is not
+> already present in the repo.
+
+---
+
+# 4. Data Model
+
+## TarcieEvent
+
+The core data structure for all captured events.
+
+```rust
+pub struct TarcieEvent {
+    pub id: Uuid,
+    pub device_id: Uuid,
+    pub timestamp_utc: DateTime<Utc>,
+    pub timestamp_mono_ms: u64,
+    pub event_type: EventType,
+    pub content: String,
+    pub app_context: String,
+    pub source_version: String,
+}
+```
+
+### Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `Uuid` | Unique event identifier, generated per capture |
+| `device_id` | `Uuid` | Persistent device identifier, created on first launch and stored to disk |
+| `timestamp_utc` | `DateTime<Utc>` | Wall-clock time for cross-session ordering |
+| `timestamp_mono_ms` | `u64` | Monotonic clock offset in milliseconds from session start. Resets on restart. Used for relative timing within a session |
+| `event_type` | `EventType` | Discriminator: `Note` or `Marker` |
+| `content` | `String` | Captured text content. Max 10 KB. Empty string for bare markers |
+| `app_context` | `String` | Extracted `#tag` from note content, or empty. Max 64 chars |
+| `source_version` | `String` | Always `"tarcie-v1.0.0"` in v1 |
+
+## EventType
+
+```rust
+pub enum EventType {
+    Note,
+    Marker { reason: Option<String> },
+}
+```
+
+| Variant | Description |
+|---------|-------------|
+| `Note` | A text note. Content holds the user's text. First `#tag` extracted to `app_context` |
+| `Marker { reason }` | A timestamp marker. Optional `reason` string describes what is being marked |
+
+## Serialization Format
+
+Events are serialized as JSON, one per line (JSONL). Example:
+
+```json
+{"id":"a1b2c3d4-...","device_id":"e5f6a7b8-...","timestamp_utc":"2026-02-25T14:30:00Z","timestamp_mono_ms":42000,"event_type":"Note","content":"Remember to check the flush interval #config","app_context":"config","source_version":"tarcie-v1.0.0"}
+```
+
+Marker example:
+
+```json
+{"id":"f9e8d7c6-...","device_id":"e5f6a7b8-...","timestamp_utc":"2026-02-25T14:31:00Z","timestamp_mono_ms":102000,"event_type":{"Marker":{"reason":"deploy started"}},"content":"","app_context":"","source_version":"tarcie-v1.0.0"}
+```
+
+## Sink Payload
+
+When flushed, events are batched into a JSON payload:
+
+```json
+{
+  "source": "tarcie",
+  "events": [ ... ]
+}
+```
+
+Each batch contains up to `DEFAULT_BATCH_MAX` (200) events.
+
+---
+
+---
+
+# Governance
+
+**Truth class:** canonical doctrine
+
+This documentation system governs Tarcie's repo-local implementation truth. It
+does not define ecosystem-level doctrine, DataForge truth ownership, or SMITH
+downstream analysis behavior beyond the contract surfaces Tarcie consumes or
+hands off to.
+
+## Authority Boundary
+
+- `doc/system/` is the canonical authored source tree for Tarcie system truth.
+- `doc/TARSYSTEM.md` is generated output and must not be edited by hand.
+- Supporting docs, plans, and archives outside `doc/system/` are subordinate to
+  the compiled system reference when they describe current behavior.
+- Runtime behavior and verification evidence override stale prose; when they
+  disagree, update the source chapter and rebuild the compiled artifact.
+
+## Change Control
+
+Changes that alter capture behavior, queue durability, flush semantics,
+configuration, sink contracts, or safety constraints must update the relevant
+`doc/system/` chapter in the same change as the implementation.
+
+Documentation-only changes must still rebuild `doc/TARSYSTEM.md` with:
+
+```bash
+bash doc/system/BUILD.sh
+```
+
+---
+
+# Integrations
+
+**Document version:** 1.0 (bootstrap scaffold)
+
+External integrations, upstream services, and wire contracts.
+
+> This chapter is a registry-generated bootstrap scaffold for a
+> `application` class documentation system. Replace this placeholder with
+> real authored content. Registry will not invent repo truth that is not
+> already present in the repo.
 
 ---
 
