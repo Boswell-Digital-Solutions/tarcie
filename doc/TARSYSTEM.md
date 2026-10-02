@@ -1333,6 +1333,33 @@ types without checking them, so nothing enforced the strict settings in
 The final step runs `git diff --exit-code doc/TARSYSTEM.md`. A change under
 `doc/system/` that ships without a rebuild fails the job.
 
+## Which CI runs for which change
+
+A change that touches only documentation runs the Documentation CI and no code CI.
+A change that touches any other file runs the code CI.
+A change that touches both runs both.
+The code CI does not run on a schedule.
+
+`.github/workflows/documentation.yml` runs on a change to `docs/**`, `doc/**`, `**/*.md`, or the workflow file.
+It runs `bash doc/system/BUILD.sh`.
+It then fails if `git diff --exit-code -- doc` shows a difference.
+
+`.github/workflows/ci.yml` has a workflow-level `paths` filter on `push` and on `pull_request`.
+The filter lists `**` first, and then excludes `docs/**`, `doc/**`, and `**/*.md`.
+The last matching pattern wins.
+A change to `.github/workflows/**` is code and runs the code CI.
+
+No code in this repository reads a documentation file during build or test.
+The filter therefore has no re-included path.
+If code starts to read a documentation file, add that path to the filter after the exclusions.
+
+No secret scan runs in this repository today.
+A secret scan must run on every change, documentation included.
+Do not put a path filter on a secret scan.
+
+Do not add a required check on a path-filtered workflow.
+A skipped workflow does not report the check, and the check stays pending.
+
 ## Building
 
 ```bash
