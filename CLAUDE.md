@@ -8,6 +8,10 @@ Canonical reference: `doc/system/` → `doc/TARSYSTEM.md` (`bash doc/system/BUIL
 
 ---
 
+## Repo Identity
+
+- Default branch: main
+
 ## Boundaries
 
 - **Write-only by design.** tarcie captures and forwards; it does not read back, browse, edit, or
