@@ -3,7 +3,7 @@ set -euo pipefail
 
 PARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$PARTS_DIR/../.." && pwd)"
-ASSEMBLED_OUTPUT="${1:-$ROOT_DIR/doc/TARSYSTEM.md}"
+ASSEMBLED_OUTPUT="${1:-$ROOT_DIR/doc/tarSYSTEM.md}"
 
 require_contains() {
   local file="$1"
@@ -28,18 +28,18 @@ require_absent() {
 }
 
 # Canonical identity: the index must declare the designation-bound output.
-require_contains "$PARTS_DIR/_index.md" "**Designation:** TAR" "index designation"
+require_contains "$PARTS_DIR/_index.md" "**Designation:** tar" "index designation"
 require_contains "$PARTS_DIR/_index.md" "BDS Documentation Protocol v2.0" "index protocol"
-require_contains "$PARTS_DIR/_index.md" 'Primary output: `doc/TARSYSTEM.md`' "index primary output"
-require_contains "$PARTS_DIR/BUILD.sh" 'DESIGNATION="TAR"' "build designation"
+require_contains "$PARTS_DIR/_index.md" 'Primary output: `doc/tarSYSTEM.md`' "index primary output"
+require_contains "$PARTS_DIR/BUILD.sh" 'DESIGNATION="tar"' "build designation"
 require_absent  "$PARTS_DIR/_index.md" 'Primary output: `doc/SYSTEM.md`' "index legacy primary output"
 require_absent  "$PARTS_DIR/_index.md" 'Command: `bash doc/SYSTEM.md`' "index legacy doc/SYSTEM.md command"
 
 # Assembled artifact must carry doctrine and not still declare legacy output.
 test -f "$ASSEMBLED_OUTPUT"
 require_contains "$ASSEMBLED_OUTPUT" "Document version" "assembled document version header"
-require_contains "$ASSEMBLED_OUTPUT" "**Designation:** TAR" "assembled designation"
-require_contains "$ASSEMBLED_OUTPUT" 'Primary output: `doc/TARSYSTEM.md`' "assembled primary output"
+require_contains "$ASSEMBLED_OUTPUT" "**Designation:** tar" "assembled designation"
+require_contains "$ASSEMBLED_OUTPUT" 'Primary output: `doc/tarSYSTEM.md`' "assembled primary output"
 require_contains "$ASSEMBLED_OUTPUT" "BDS Documentation Protocol v2.0" "assembled protocol"
 require_contains "$ASSEMBLED_OUTPUT" "truth classes" "assembled truth classes"
 require_absent  "$ASSEMBLED_OUTPUT" 'Primary output: `doc/SYSTEM.md`' "assembled legacy primary output"
