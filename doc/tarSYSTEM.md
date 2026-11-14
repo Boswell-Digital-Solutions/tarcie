@@ -1,13 +1,13 @@
 # tarcie - Compiled System Reference
 
-**Designation:** TAR
+**Designation:** tar
 **Document role:** Canonical compiled technical reference for the Tarcie local capture tool
 **Source:** `doc/system/`
 **Build command:** `bash doc/system/BUILD.sh`
 **Document version:** 2.0 (2026-06-22) - canonical compliance migration
 **Protocol:** BDS Documentation Protocol v2.0; BDS Repo Documentation System Canonical Compliance Standard
 
-> **Generated artifact warning:** `doc/TARSYSTEM.md` is assembled output. Edit
+> **Generated artifact warning:** `doc/tarSYSTEM.md` is assembled output. Edit
 > the source modules under `doc/system/` and rebuild. Hand edits to the
 > compiled artifact are overwritten by the next build.
 
@@ -15,7 +15,7 @@ Assembly contract:
 
 - Command: `bash doc/system/BUILD.sh`
 - Validation: `bash doc/system/validate_snapshots.sh` runs during assembly
-- Primary output: `doc/TARSYSTEM.md`
+- Primary output: `doc/tarSYSTEM.md`
 
 This `doc/system/` tree is the canonical source of truth for tarcie. It
 uses explicit **truth classes**: canonical facts define the repo role, authority
@@ -1330,7 +1330,7 @@ It installs the system libraries, runs `npm ci` and `npm run build`, runs
 types without checking them, so nothing enforced the strict settings in
 `tsconfig.json` before this step existed.
 
-The final step runs `git diff --exit-code doc/TARSYSTEM.md`. A change under
+The final step runs `git diff --exit-code doc/tarSYSTEM.md`. A change under
 `doc/system/` that ships without a rebuild fails the job.
 
 ## Which CI runs for which change
@@ -1698,7 +1698,7 @@ hands off to.
 ## Authority Boundary
 
 - `doc/system/` is the canonical authored source tree for Tarcie system truth.
-- `doc/TARSYSTEM.md` is generated output and must not be edited by hand.
+- `doc/tarSYSTEM.md` is generated output and must not be edited by hand.
 - Supporting docs, plans, and archives outside `doc/system/` are subordinate to
   the compiled system reference when they describe current behavior.
 - Runtime behavior and verification evidence override stale prose; when they
@@ -1710,7 +1710,7 @@ Changes that alter capture behavior, queue durability, flush semantics,
 configuration, sink contracts, or safety constraints must update the relevant
 `doc/system/` chapter in the same change as the implementation.
 
-Documentation-only changes must still rebuild `doc/TARSYSTEM.md` with:
+Documentation-only changes must still rebuild `doc/tarSYSTEM.md` with:
 
 ```bash
 bash doc/system/BUILD.sh

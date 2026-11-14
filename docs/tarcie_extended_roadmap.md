@@ -19,7 +19,7 @@
 - root `CLAUDE.md`
 - modular `doc/system/`
 - `doc/system/BUILD.sh`
-- `doc/TARSYSTEM.md`
+- `doc/tarSYSTEM.md`
 - `scripts/context-bundle.sh`
 
 ## Phase 2 — Verification Hardening
@@ -36,7 +36,7 @@ current implementation reality.
   Vitest, with jsdom for the overlay
 - `.github/workflows/ci.yml`, which builds the frontend, typechecks it, runs
   both suites and the document build on every pull request, and fails on a
-  stale `doc/TARSYSTEM.md`
+  stale `doc/tarSYSTEM.md`
 - an operational log under `logs_dir`, bounded and free of capture content,
   because a write-only tool otherwise has no way to report that delivery
   stopped

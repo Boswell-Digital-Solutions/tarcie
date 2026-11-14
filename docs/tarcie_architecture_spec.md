@@ -11,7 +11,7 @@ It records only repository surfaces directly observable from the current working
 
 | Surface | Current truth |
 | --- | --- |
-| Canonical technical reference | `doc/system/` plus generated `doc/TARSYSTEM.md` |
+| Canonical technical reference | `doc/system/` plus generated `doc/tarSYSTEM.md` |
 | Repo-local instructions | `CLAUDE.md` |
 | Current maturity | 124 Rust unit tests and 29 frontend unit tests; CI runs both suites, a TypeScript typecheck, and a stale-document check on every pull request |
 
@@ -19,7 +19,7 @@ It records only repository surfaces directly observable from the current working
 
 | Module | Surface | Current role |
 | --- | --- | --- |
-| Documentation stack | `doc/system/`, generated `doc/TARSYSTEM.md`, `scripts/context-bundle.sh` | Canonical repo context and build surfaces |
+| Documentation stack | `doc/system/`, generated `doc/tarSYSTEM.md`, `scripts/context-bundle.sh` | Canonical repo context and build surfaces |
 | Rust runtime | `src-tauri/src/` | IPC capture commands, JSONL queue, HTTP sink, background flusher, operational log |
 | Overlay | `src/` | The capture window: DOM wiring, capture decisions, and the five-second revert |
 | Planning and specs | `docs/` | This spec, the extended roadmap, and the governed plan set under `docs/plans/` |
@@ -32,8 +32,8 @@ was registry-generated boilerplate rather than observed repo truth.
 ## 4. Architectural Boundary
 
 - this document is a baseline and must be expanded as concrete modules, routes, schemas, and integrations are cataloged
-- when this spec and `doc/TARSYSTEM.md` diverge, `doc/TARSYSTEM.md` wins as the implemented reality reference
+- when this spec and `doc/tarSYSTEM.md` diverge, `doc/tarSYSTEM.md` wins as the implemented reality reference
 
 The previous revision named `SYSTEM.md` as that reference. There is no
-`SYSTEM.md`: the root and `doc/` copies were retired, and `doc/TARSYSTEM.md` is
+`SYSTEM.md`: the root and `doc/` copies were retired, and `doc/tarSYSTEM.md` is
 the assembled artifact.

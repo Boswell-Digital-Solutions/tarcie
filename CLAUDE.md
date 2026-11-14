@@ -3,8 +3,8 @@
 Friction-free **write-only** capture tool: hotkey overlay → durable queue → HTTP sink. Tauri
 desktop app.
 
-Canonical reference: `doc/system/` → `doc/TARSYSTEM.md` (`bash doc/system/BUILD.sh`).
-`doc/TARSYSTEM.md` is a build artifact; edit the parts, never the artifact.
+Canonical reference: `doc/system/` → `doc/tarSYSTEM.md` (`bash doc/system/BUILD.sh`).
+`doc/tarSYSTEM.md` is a build artifact; edit the parts, never the artifact.
 
 ---
 
@@ -53,7 +53,7 @@ frontend bundle exists. The build also needs the Tauri Linux system libraries
 
 `.github/workflows/ci.yml` runs the same ground on every pull request. It
 installs the system libraries, builds the frontend, runs the tests, and rebuilds
-the system document. It also fails if `doc/TARSYSTEM.md` is stale, so a change
+the system document. It also fails if `doc/tarSYSTEM.md` is stale, so a change
 under `doc/system/` must ship with its rebuild.
 
 No test currently pins a known deviation. If one must record behavior that

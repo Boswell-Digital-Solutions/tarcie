@@ -10,7 +10,7 @@ Built with Tauri v2, Rust, and TypeScript
 
 - **Repo type:** Desktop/local capture tool
 - **Authority boundary:** Fast local note and marker capture with downstream sink handoff; not a resident ecosystem service and not the durable truth store
-- **Deep reference:** `doc/system/_index.md`, `doc/TARSYSTEM.md`, `../docs/canonical/documentation_protocol_v1.md`
+- **Deep reference:** `doc/system/_index.md`, `doc/tarSYSTEM.md`, `../docs/canonical/documentation_protocol_v1.md`
 - **README role:** Product overview and local run entrypoint
 - **Truth note:** Feature lists, version labels, and implementation notes in this README are snapshot facts unless explicitly marked as canonical doctrine or target values
 

@@ -156,7 +156,7 @@ It installs the system libraries, runs `npm ci` and `npm run build`, runs
 types without checking them, so nothing enforced the strict settings in
 `tsconfig.json` before this step existed.
 
-The final step runs `git diff --exit-code doc/TARSYSTEM.md`. A change under
+The final step runs `git diff --exit-code doc/tarSYSTEM.md`. A change under
 `doc/system/` that ships without a rebuild fails the job.
 
 ## Which CI runs for which change

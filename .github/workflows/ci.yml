@@ -84,7 +84,7 @@ jobs:
       - name: Build the system document
         run: bash doc/system/BUILD.sh
 
-      # doc/TARSYSTEM.md is assembled output. A change to doc/system/ that
+      # doc/tarSYSTEM.md is assembled output. A change to doc/system/ that
       # ships without a rebuild leaves the compiled artifact stale.
       - name: Check the compiled document is not stale
-        run: git diff --exit-code doc/TARSYSTEM.md
+        run: git diff --exit-code doc/tarSYSTEM.md
